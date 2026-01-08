@@ -1,6 +1,8 @@
 import pygfx as gfx
 from rendercanvas.offscreen import RenderCanvas
 import math as m
+import subprocess as sp
+from importlib.resources import files
 
 class Stocraft(gfx.WorldObject):
     def __init__(self, *args, **kwargs):
@@ -28,6 +30,13 @@ class Stocraft(gfx.WorldObject):
     
     def set_code(self, code: str):
         self.code = code
+
+        file = files("simtoy.data.stocraft") / "stocraft.py"
+        print(file.as_posix())
+        p = sp.Popen(["python", file.as_posix()],stdin=sp.PIPE,stdout=sp.PIPE)
+        p.stdin.write('')
+        p.stdin.flush()
+
 
     def step(self, dt: float,camera: gfx.Camera, canvas : RenderCanvas):
         for ob in self.children:
