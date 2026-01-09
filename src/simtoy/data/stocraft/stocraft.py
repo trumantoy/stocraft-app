@@ -16,7 +16,7 @@ import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer,encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer,encoding='utf-8')
 sys.stdin = io.TextIOWrapper(sys.stdin.buffer,encoding='utf-8')
-    
+
 import threading
 import multiprocessing as mp
 from multiprocessing.managers import ValueProxy,ListProxy,DictProxy
@@ -461,11 +461,28 @@ if __name__ == '__main__':
             play(worker_req,codes,args.date,args.days)
         elif args.mode == 'measure':
             codes = args.code.split(',')
-            for code in codes:
-                交易 = get_stock_intraday(code)
-                print(交易,flush=True)
+            已有交易 = None
+            while True:
+                for code in codes:
+                    交易 = get_stock_intraday(code)
+                    # 流量 = measure(交易)
+                    
+                    if 已有交易 is not None:
+                        index_diff = 交易.index.difference(已有交易.index)
+                        新增量 = 交易.loc[index_diff]
+                    else:
+                        新增量 = 交易
+                        print(','.join(新增量.columns))
+                    
+                    if not 新增量.empty:
+                        print(新增量.to_string(header=False))
+
+                    已有交易 = 交易
+                time.sleep(3)
         elif args.mode == 'test':
             pass
+        elif args.mode == 'exit':
+            break
         else:
             while len(log):
                 print(log.pop(0))

@@ -14,8 +14,8 @@ class Stocraft(gfx.WorldObject):
         mesh = gfx.Mesh(plane, material)
         # self.add(mesh)
         
-        start = m.log(1,1.1)
-        end = m.log(100,1.1)
+        start = m.log(1,1.01)
+        end = m.log(100,1.01)
 
         # 创建Ruler 作为 x，y，z轴的可视化表示
         axis_x = gfx.Ruler(start_pos=(0,0,0), end_pos=(1,0,0))
@@ -34,11 +34,14 @@ class Stocraft(gfx.WorldObject):
         file = files("simtoy.data.stocraft") / "stocraft.py"
         print(file.as_posix())
         p = sp.Popen(["python", file.as_posix()],stdin=sp.PIPE,stdout=sp.PIPE)
-        p.stdin.write('')
+        p.stdin.write('exit\n'.encode())
         p.stdin.flush()
+        print(p.stdout.read())
+        p.wait()
 
 
     def step(self, dt: float,camera: gfx.Camera, canvas : RenderCanvas):
         for ob in self.children:
             if isinstance(ob, gfx.Ruler):
                 ob.update(camera, canvas.get_logical_size())
+                
