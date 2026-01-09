@@ -2,7 +2,10 @@ import pygfx as gfx
 from rendercanvas.offscreen import RenderCanvas
 import math as m
 import subprocess as sp
+import threading
 from importlib.resources import files
+import pandas as pd
+import numpy as np
 
 class Stocraft(gfx.WorldObject):
     def __init__(self, *args, **kwargs):
@@ -31,14 +34,25 @@ class Stocraft(gfx.WorldObject):
     def set_code(self, code: str):
         self.code = code
 
+        thread = threading.Thread(target=self.measure, args=(code,),daemon=True)
+        thread.start()
+
+    def measure(self,code):
         file = files("simtoy.data.stocraft") / "stocraft.py"
         print(file.as_posix())
-        p = sp.Popen(["python", file.as_posix()],stdin=sp.PIPE,stdout=sp.PIPE)
-        p.stdin.write('exit\n'.encode())
+        p = sp.Popen(["python", file.as_posix(), 'measure','--code', code],stdin=sp.PIPE,stdout=sp.PIPE,encoding='utf-8')
+        
+        line = p.stdout.readline().strip()
+        交易数据 = pd.DataFrame(np.full((10000, 4), np.nan),index=[i for i in range(10000)],columns=line.split(','))
+        while line != '-':
+            line = p.stdout.readline().strip()
+            if not line or line == '-': continue
+            row = line.split(',')
+            交易数据.loc[int(row[0])] = row[1:]
+        print(p.stdout.read(2))
+        p.stdin.write('exit\n')
         p.stdin.flush()
-        print(p.stdout.read())
         p.wait()
-
 
     def step(self, dt: float,camera: gfx.Camera, canvas : RenderCanvas):
         for ob in self.children:

@@ -460,25 +460,28 @@ if __name__ == '__main__':
             codes = args.code.split(',')
             play(worker_req,codes,args.date,args.days)
         elif args.mode == 'measure':
-            codes = args.code.split(',')
             已有交易 = None
-            while True:
-                for code in codes:
-                    交易 = get_stock_intraday(code)
-                    # 流量 = measure(交易)
-                    
-                    if 已有交易 is not None:
-                        index_diff = 交易.index.difference(已有交易.index)
-                        新增量 = 交易.loc[index_diff]
-                    else:
-                        新增量 = 交易
-                        print(','.join(新增量.columns))
-                    
-                    if not 新增量.empty:
-                        print(新增量.to_string(header=False))
+            
+            h9 = datetime.now().replace(hour=9, minute=0, second=0)
+            h15 = datetime.now().replace(hour=15, minute=0, second=0)
+            while h9 < datetime.now():
+                交易 = get_stock_intraday(args.code)
+                # 流量 = measure(交易)
+                
+                if 已有交易 is not None:
+                    index_diff = 交易.index.difference(已有交易.index)
+                    新增量 = 交易.loc[index_diff]
+                else:
+                    新增量 = 交易
+                    print(','.join(交易.columns))
+                
+                if not 新增量.empty:
+                    print(新增量.to_csv(header=False))
 
-                    已有交易 = 交易
+                已有交易 = 交易                
+                if datetime.now() > h15: break
                 time.sleep(3)
+
         elif args.mode == 'test':
             pass
         elif args.mode == 'exit':
