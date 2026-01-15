@@ -93,7 +93,7 @@ class AppWindow (Gtk.ApplicationWindow):
 
         if width != area_w or height != area_h: 
             self.canvas = RenderCanvas(size=(area_w,area_h))
-            self.renderer = gfx.renderers.WgpuRenderer(self.canvas)
+            self.renderer = WgpuRenderer(self.canvas)
             self.scene.camera_controller.register_events(self.renderer)
         
         camera = self.scene.camera_controller.cameras[0]
