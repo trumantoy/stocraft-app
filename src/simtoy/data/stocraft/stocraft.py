@@ -2,6 +2,7 @@ import multiprocessing as mp
 import akshare as ak
 import pandas as pd
 import numpy as np
+import math as m
 import time
 import os
 import sys
@@ -25,21 +26,23 @@ import glob
 
 db_dir = 'db'
 
-def feature(交易,已有特征=None,interval_seconds = 6):
-    df = pd.DataFrame(columns=['起时','终时','起价','终价','总价','均价'])
+def feature(交易,已有特征=None,interval_seconds = 10):
+    if 已有特征 is None:
+        已有特征 = pd.DataFrame(columns=['起时','终时','起价','终价','总价','均价','均点','起点','终点'])
 
     # 把交易的价格全部换成对数，底数为1.01
-    交易['成交点'] = np.log(交易['成交价']) / np.log(1.01)
+    交易['成交点'] = round(np.log(交易['成交价']) / np.log(1.01))
  
     时间,成交价,手数,买卖盘性质,成交点 = 交易.iloc[0]['时间'],交易.iloc[0]['成交价'],交易.iloc[0]['手数'],交易.iloc[0]['买卖盘性质'],交易.iloc[0]['成交点']
     起时 = 终时 = 时间
-    终价 = 成交价
-    总价 = round((成交价 * 手数 * 100) / 1e4,1)
-    均价 = round((终价 - 起价) / 2 + 起价,2)
-    当前 = 起时,终时,起价,终价,总价,均价,成交点,买卖盘性质
-    量价 = []
-    
-    rows = list()
+    起价 = 终价 = 成交价
+    总量 = 手数 * 100
+    总价 = round((成交价 * 总量) / 1e4)
+    均价 = 总价 / 总量
+    均点 = m.log(总价 / 总量,1.01)
+    当前 = 起时,终时,起价,终价,总价,均价,买卖盘性质
+
+    rows = 已有特征.values.tolist()
     for i,r in 交易.iterrows():
         时间,成交价,手数,买卖盘性质,成交点 = r['时间'],r['成交价'],r['手数'],r['买卖盘性质'],r['成交点']
         if 买卖盘性质 == '中性盘':
@@ -47,60 +50,62 @@ def feature(交易,已有特征=None,interval_seconds = 6):
         
         if 时间.startswith('09:25'):
             起时 = 终时 = 时间
-            终价 = 成交价
-            总价 = round((成交价 * 手数 * 100) / 1e4,1)
-            均价 = 终价
-            当前 = 起时,终时,起价,终价,总价,均价,成交点,买卖盘性质
+            起价 = 终价 = 成交价
+            总量 = 手数 * 100
+            总价 = 成交价 * 总量
+            均价 = 总价 / 总量
+            均点 = m.log(总价 / 总量,1.01)
+            起点 = round(成交点)
+            终点 = round(成交点)
+            当前 = 起时,终时,起价,终价,总价,均价,买卖盘性质,起点,终点
         else:
-            _,终时,_,终价,_,均价,终点,性质 = 当前
+            _,终时,_,终价,_,均价,性质,_,终点 = 当前
 
             time1 = datetime.strptime(终时, "%H:%M:%S")
             time2 = datetime.strptime(时间, "%H:%M:%S")
             time_diff = time2 - time1
-            # incre_diff = round((终价 - 起价) / 基价 * 100,2) - round((成交价 - 起价) / 基价 * 100,2)
-
-            if (买卖盘性质 != 性质 and 成交价 == 终价):
+            if (买卖盘性质 != 性质 and 成交点 == 终点):
                 买卖盘性质 = 性质
 
-            if time_diff.total_seconds() > interval_seconds or (性质 != 买卖盘性质 and 成交价 != 终价):
-                涨幅 = round((终点 - 成交点),2)
-                总价 = sum(量价)
-                #均价 = #round((终价 + 起价) / 2,2)
-                均价 = round((np.array(量价) / 总价).sum(),2)
-
+            if time_diff.total_seconds() > interval_seconds or (性质 != 买卖盘性质 and 成交点 != 终点):
+                均价 = 总价 / 总量
+                均点 = m.log(总价 / 总量,1.01)
+            
                 if len(rows):
-                    最近 = rows[-1]
-                    最近涨幅 = 最近['涨幅']
-                    time1 = datetime.strptime(最近['终时'], "%H:%M:%S")
-                    time2 = datetime.strptime(起时, "%H:%M:%S")
+                    近起时,近终时,近起价,近终价,近总价,近均价,近均点,近起点,近终点 = rows[-1]
+
+                    time1 = datetime.strptime(近终时, "%H:%M:%S")
+                    time2 = datetime.strptime(时间, "%H:%M:%S")
                     time_diff = time2 - time1
 
-                    if time_diff.total_seconds() < interval_seconds:
-                        if 最近['起价'] == 最近['终价'] \
-                            or 最近['起价'] < 最近['终价'] and 最近涨幅 + 涨幅 >= 最近涨幅 \
-                            or 最近['起价'] > 最近['终价'] and 最近涨幅 + 涨幅 <= 最近涨幅: 
-                        
-                            起时 = 最近['起时']
-                            起价 = 最近['起价']
-                            合并总价 = 最近['总价'] + 总价
-                            涨幅 = 最近['涨幅'] + 涨幅
-                            最近权重 = 最近['总价'] / 合并总价
-                            权重 = 总价 / 合并总价
-                            均价 = round(最近['均价'] * 最近权重 + 均价 * 权重,2)
-                            rows.pop()
+                    if time_diff.total_seconds() < interval_seconds or 近终点 == 成交点:
+                        近起时,近终时,近起价,近终价,近总价,近均价,近均点,近起点,近终点
 
-                rows.append(pd.Series({'起时':起时,'终时':终时,'起价':起价,'终价':终价,'总价':总价,'均价':均价,'性质':性质}))
-                涨幅 = 0
+                        起时 = 近起时
+                        终时 = 时间
+                        起价 = 近起价
+                        终价 = 成交价
+                        总价 = (近总价 + 总价) * 1e4
+                        均价 = 近均价
+                        均点 = 近均点
+                        起点 = 近起点
+                        终点 = 成交点
+                        rows.pop()
+                rows.append((起时,终时,起价,终价,round(总价 / 1e4),round(均价,2),round(均点),round(起点),round(终点)))
+                总量 = 0
                 总价 = 0
                 起时 = 时间
                 起价 = 终价
+                起点 = 终点
 
-            量价.append(成交价 * 手数 * 100)
+            总价 += 成交价 * 手数 * 100
+            总量 += 手数 * 100
             终时 = 时间
             终价 = 成交价
             终点 = 成交点
-            当前 = 起时,终时,起价,终价,总价,均价,终点,买卖盘性质
-    df.add(rows)
+            当前 = 起时,终时,起价,终价,总价,均价,买卖盘性质,起点,终点
+    
+    df = pd.DataFrame(columns=['起时','终时','起价','终价','总价','均价','均点','起点','终点'],data=rows)
     return df
 
 
@@ -458,29 +463,36 @@ if __name__ == '__main__':
             已有交易 = None
             已有特征 = None
             
-            h9 = datetime.now().replace(hour=9, minute=0, second=0)
+            h9 = datetime.now().replace(hour=9, minute=15, second=0)
             h15 = datetime.now().replace(hour=15, minute=0, second=0)
-            while h9 < datetime.now():
-                交易 = get_stock_intraday(args.code)
-                # 流量 = measure(交易)
+            
+            if datetime.now() < h9: continue
 
-                if 已有交易 is not None:
-                    index_diff = 交易.index.difference(已有交易.index)
-                    新增交易 = 交易.loc[index_diff]
-                else:
-                    新增交易 = 交易
-                    print(','.join(交易.columns))
-                
-                if not 新增交易.empty:
-                    print(新增交易.to_csv(header=False))
+            交易 = get_stock_intraday(args.code)
+            # 流量 = measure(交易)
 
-                特征 = feature(新增交易,已有特征)
-                print(特征.to_string(index=False))                
+            if 已有交易 is None:
+                新增交易 = 交易
+                print(','.join(交易.columns))
+            else:
+                index_diff = 交易.index.difference(已有交易.index)
+                新增交易 = 交易.loc[index_diff]
 
-                已有交易 = 交易                
-                已有特征 = 特征
-                if datetime.now() > h15: break
-                time.sleep(1)
+            if not 新增交易.empty: print(新增交易.to_csv(header=False))
+            print('-')
+            特征 = feature(新增交易,已有特征)
+
+            if 已有特征 is None:
+                新增特征 = 特征
+                print(','.join(特征.columns))
+            else:
+                index_diff = 特征[特征.index.difference(已有特征.index)]
+                新增特征 = 特征.loc[index_diff]
+            
+            if not 新增特征.empty: print(新增特征.to_csv(header=False))
+            
+            已有交易 = 交易
+            已有特征 = 特征
 
         elif args.mode == 'test':
             pass
