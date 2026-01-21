@@ -37,7 +37,7 @@ def feature(交易,已有特征=None,interval_seconds = 10):
     起时 = 终时 = 时间
     起价 = 终价 = 成交价
     总量 = 手数 * 100
-    总价 = round((成交价 * 总量) / 1e4)
+    总价 = (成交价 * 总量) / 1e4
     均价 = 总价 / 总量
     均点 = m.log(总价 / 总量,1.01)
     当前 = 起时,终时,起价,终价,总价,均价,买卖盘性质
@@ -45,7 +45,7 @@ def feature(交易,已有特征=None,interval_seconds = 10):
     rows = 已有特征.values.tolist()
     for i,r in 交易.iterrows():
         时间,成交价,手数,买卖盘性质,成交点 = r['时间'],r['成交价'],r['手数'],r['买卖盘性质'],r['成交点']
-        if 买卖盘性质 == '中性盘':
+        if 买卖盘性质 == '中性盘' or 手数 == 0:
             continue
         
         if 时间.startswith('09:25'):
@@ -85,13 +85,16 @@ def feature(交易,已有特征=None,interval_seconds = 10):
                         终时 = 时间
                         起价 = 近起价
                         终价 = 成交价
-                        总价 = (近总价 + 总价) * 1e4
-                        均价 = 近均价
-                        均点 = 近均点
+                        近权重 = 近总价 / (近总价 + 总价)
+                        权重 = 总价 / (近总价 + 总价)
+                        均价 = 总价 / 总量
+                        均价 = 近均价 * 近权重 + 均价 * 权重
+                        总价 = 近总价 + 总价
+                        均点 = 近均点 * 近权重 + 均点 * 权重
                         起点 = 近起点
                         终点 = 成交点
                         rows.pop()
-                rows.append((起时,终时,起价,终价,round(总价 / 1e4),round(均价,2),round(均点),round(起点),round(终点)))
+                rows.append((起时,终时,起价,终价,round(总价),round(均价,2),round(均点),round(起点),round(终点)))
                 总量 = 0
                 总价 = 0
                 起时 = 时间
@@ -239,9 +242,73 @@ def measure(交易,freq=10):
     
     return df
 
-def evaluate(code,date,info):
+def evaluate(code,info,dates):
+# 名称                 华立股份
+# 成交量            202020.0
+# 量比                 2.52
+# 换手率                7.52
+# 市盈率-动态            84.67
+
+    # 从info中得到股票的换手率和成交量得到总量
+    换手率 = info['换手率']
+    成交量 = info['成交量']
+    总量 = 成交量 / (换手率 / 100) if 换手率 else 0
     
-    pass
+    
+    评分 = 0
+    散户 = []
+    游资 = []
+    主力 = []
+    庄家 = []
+    套牢量 = 0.0
+    套牢资金 = 0.0
+    支撑点 = []
+
+    try:
+        for date in dates:
+            交易 = pd.read_csv(os.path.join(db_dir,f'{code}-{date}-交易.csv'),dtype={'代码':str})
+            特征 = feature(交易)
+            # 统计特征中，大单的区间，500万以下，500~1000万，1000~2000万，2000万以上的数量，分别用散户，游资，主力，庄家来表示。
+            散户 += 特征[特征['总价'] <= 5e7]
+            游资 += 特征[(特征['总价'] > 5e7) & (特征['总价'] <= 1e8)]
+            主力 += 特征[特征['总价'] > 1e8].values.tolist()
+            庄家 += 特征[特征['总价'] > 2e8].values.tolist()
+            
+            if date == dates[-1]: 
+                # 得到最后的价格
+                价格 = 交易['成交价'].iloc[-1]
+
+                # 计算出这个价格之上有多少套牢盘
+                套牢盘 = 交易[(交易['买卖盘性质'] != '中性盘') & (交易['成交价'] > 价格)]
+                总价 = 套牢盘['成交价']  * 套牢盘['手数'] * 100
+
+                套牢资金 = 总价.sum()
+                套牢量 = 套牢盘['手数'].sum() * 100 / 总量
+
+                
+
+                break
+    except:
+        评分 = 0
+
+    # 根据不同资金量的数量，给与不同的权重分数，庄家权重最大，散户最小。
+    散户权重 = 0.0
+    游资权重 = 0.1
+    主力权重 = 0.2
+    庄家权重 = 0.7
+    套牢权重 = 1
+    评分 = 散户.shape[0] * 散户权重 + 游资.shape[0] * 游资权重 + 主力.shape[0] * 主力权重 + 庄家.shape[0] * 庄家权重 + 套牢量 * 套牢权重
+    if 评分 < 1: return None
+
+    r = {
+        '代码': info['代码'],
+        '名称': info['名称'],
+        '评分': float(round(评分,2)),
+        '散户,游资,主力,庄家': f'{散户},{游资},{主力},{庄家}',
+        '套牢量': f'{float(round(套牢量,2))}%',
+        '套牢盘': f'{float(round(套牢资金/1e8,1))}亿',
+    }
+    return r
 
 def up(worker_req : mp.Queue,*args):
     worker_res = shared.Queue()
@@ -250,62 +317,20 @@ def up(worker_req : mp.Queue,*args):
     stocks = pd.read_csv(os.path.join(db_dir,f'0-{date}-行情.csv'),dtype={'代码':str})
     stocks_seleted = stocks[stocks['代码'].isin(codes)]
     stocks = stocks[(stocks['流通市值'] >= cap[0] * 1e8) & (stocks['流通市值'] <= cap[1] * 1e8)]
-    stocks = pd.concat([stocks, stocks_seleted], ignore_index=True).drop_duplicates()    
+    stocks = pd.concat([stocks, stocks_seleted], ignore_index=True).drop_duplicates()
 
     end = datetime.strptime(date,'%Y%m%d')
     start = end - timedelta(days)
     dates = [d.strftime('%Y%m%d') for d in pd.date_range(start,end,freq='1D')][1:]
+    
+    stocks.apply(lambda r: worker_req.put((worker_res,'evaluate',r['代码'],r,dates)), axis=1)
 
-    stocks.apply(lambda r: worker_req.put((worker_res,'feature',r['代码'],date,r)), axis=1)
-
-    dfs = dict()
     for _ in range(stocks.shape[0]):
-        fun,code,date,feature_df = worker_res.get()
-        feature_df : pd.DataFrame
-        if feature_df is None or feature_df.empty: continue
-        feature_df.insert(0,'时间', date + ' ' + feature_df['起时'])
+        _,_,_,_,res = worker_res.get()    
+        if not res: continue 
+        print(res,flush=True)
         
-        if code in dfs:
-            dfs[code].append(feature_df)
-        else:
-            dfs[code] = [feature_df]
-            
-    df = pd.DataFrame(columns=['代码','名称','市值','涨幅','评分','态势','参数','权重'])    
-    for i,r in stocks.iterrows():
-        if r['代码'] not in dfs: continue
-        feature_df = pd.concat(dfs[r['代码']], ignore_index=True)
-        feature_df['资金规模'] = pd.cut(feature_df['总价'], bins=[0, 100, 500, 1000, 1000000], labels=['小散', '牛散', '游资', '主力'])
-        # feature_df['_时间'] = pd.to_datetime(feature_df['时间'])
-        # feature_df = feature_df.set_index('_时间').sort_index()
-        # 多方分布 = feature_df.groupby('资金规模',observed=True).count()
-        if feature_df.empty: continue
-        当日终价 = feature_df.tail(1)['终价'].item()
-        套牢资金 = feature_df[(feature_df['总价'] > 100 * 1e4) & (feature_df['终价'] > 当日终价)]['总价'].sum().item()
-        买方 = feature_df[feature_df['涨幅'] > 0]
-        卖方 = feature_df[feature_df['涨幅'] < 0] 
-        买方资金 = 买方['总价'].sum().item()
-        卖方资金 = 卖方['总价'].sum().item()
-        涨代价 = float((买方['总价'] / 买方['涨幅']).median() / 1e4)
-        跌代价 = float((卖方['总价'] / -卖方['涨幅']).median() / 1e4)
-
-        bais = 0.0
-        涨停资金 = 10 * 1e8
-        基准代价 = 1000 * 1e4
-
-        a = (
-            round(套牢资金 / 涨停资金,2),
-            round((1 - 卖方资金 / 买方资金) if 买方资金 else -1,2),
-            round((1 - 涨代价 / 跌代价) if not np.isnan(涨代价) and not np.isnan(跌代价) else -1,2),
-        )
-        w = (0.1,0.1,0.1)
-        score = bais + a[0] * w[0] + a[1] * w[1] + a[2] * w[2]
-
-        # 支撑位策略
-        # 趋势上涨策略
-        # 下套反弹策略
-        df.loc[len(df.index)] = (r['代码'],r['名称'],round(r['流通市值'] / 1e8,2),r['涨跌幅'],round(score,2),'下套反弹',str(a),str(w))
-        # 超-下套反弹策略
-    return df
+    return None
     
 def play(worker_req : mp.Queue,codes,date,days):
     start = datetime.strptime(date,'%y%m%d')
@@ -380,7 +405,7 @@ def worker(id,req : mp.Queue):
         res : mp.Queue = args[0]
         fun = args[1]
         val = eval(f'{fun}(*args[2:])')
-        if res: res.put((*args,val))
+        if res: res.put((*args[1:],val))
 
 def data_syncing_of_stock_intraday(worker_req : mp.Queue,log : list):
     while True:
@@ -440,25 +465,18 @@ if __name__ == '__main__':
 
         parser = argparse.ArgumentParser()
         parser.add_argument('mode', type=str, help='The mode to run the program')
-        parser.add_argument('--name',type=str,default='')
-        parser.add_argument('--code',type=str,default='[]')
+        parser.add_argument('--name',type=str,help='股票名称')
+        parser.add_argument('--code',type=str,help='股票代码',default='')
         parser.add_argument('--date',type=str,default=datetime.now().strftime('%Y%m%d'))
         parser.add_argument('--days',type=int,default=1)
-        parser.add_argument('--cap',type=str,default='(0,60)')
-        
+        parser.add_argument('--cap',nargs=2,type=float,default=[0,60],help='流通市值范围，单位：亿')
         args = parser.parse_args(cmd)
         
         if args.mode == 'sync':
             threading.Thread(target=data_syncing_of_stock_intraday,args=[worker_req,log],name='股票数据同步',daemon=True).start()
         elif args.mode == 'up':
             codes = args.code.split(',')
-            df = up(worker_req,codes,args.date,args.days,eval(args.cap))
-            df = df.sort_values(by='评分').reset_index(drop=True)
-            print(df.to_string())
-            if codes: print(df[df['代码'].isin(codes)].to_string())
-        elif args.mode == 'play':
-            codes = args.code.split(',')
-            play(worker_req,codes,args.date,args.days)
+            up(worker_req,codes,args.date,args.days,args.cap)
         elif args.mode == 'measure':
             已有交易 = None
             已有特征 = None
