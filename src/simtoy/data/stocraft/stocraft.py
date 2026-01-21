@@ -242,18 +242,11 @@ def measure(交易,freq=10):
     
     return df
 
-def evaluate(code,info,dates):
-# 名称                 华立股份
-# 成交量            202020.0
-# 量比                 2.52
-# 换手率                7.52
-# 市盈率-动态            84.67
-
+def evaluate(code,info,dates : list):
     # 从info中得到股票的换手率和成交量得到总量
     换手率 = info['换手率']
     成交量 = info['成交量']
     总量 = 成交量 / (换手率 / 100) if 换手率 else 0
-    
     
     评分 = 0
     散户 = []
@@ -264,31 +257,35 @@ def evaluate(code,info,dates):
     套牢资金 = 0.0
     支撑点 = []
 
+    for date in dates:
+        filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
+        if not os.path.exists(filepath): dates.remove(date)
+        
+    最后交易 = pd.read_csv(os.path.join(db_dir,f'{code}-{dates[-1]}-交易.csv'),dtype={'代码':str})
+    # 得到最后的价格
+    最后价格 = 最后交易['成交价'].iloc[-1]
+
     try:
-        for date in dates:
-            交易 = pd.read_csv(os.path.join(db_dir,f'{code}-{date}-交易.csv'),dtype={'代码':str})
+        for i,date in enumerate(dates):
+            filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
+
+            交易 = pd.read_csv(filepath,dtype={'代码':str})
             特征 = feature(交易)
+            
             # 统计特征中，大单的区间，500万以下，500~1000万，1000~2000万，2000万以上的数量，分别用散户，游资，主力，庄家来表示。
-            散户 += 特征[特征['总价'] <= 5e7]
-            游资 += 特征[(特征['总价'] > 5e7) & (特征['总价'] <= 1e8)]
+            散户 += 特征[特征['总价'] <= 5e7].values.tolist()
+            游资 += 特征[(特征['总价'] > 5e7) & (特征['总价'] <= 1e8)].values.tolist()
             主力 += 特征[特征['总价'] > 1e8].values.tolist()
             庄家 += 特征[特征['总价'] > 2e8].values.tolist()
             
-            if date == dates[-1]: 
-                # 得到最后的价格
-                价格 = 交易['成交价'].iloc[-1]
-
-                # 计算出这个价格之上有多少套牢盘
-                套牢盘 = 交易[(交易['买卖盘性质'] != '中性盘') & (交易['成交价'] > 价格)]
-                总价 = 套牢盘['成交价']  * 套牢盘['手数'] * 100
-
-                套牢资金 = 总价.sum()
-                套牢量 = 套牢盘['手数'].sum() * 100 / 总量
-
-                
-
-                break
+            # 计算出这个价格之上有多少套牢盘
+            套牢盘 = 交易[(交易['买卖盘性质'] != '中性盘') & (交易['成交价'] > 最后价格)]
+            总价 = 套牢盘['成交价']  * 套牢盘['手数'] * 100
+            套牢资金 = 总价.sum() #/ (len(dates) - i)
+            套牢量 = (套牢盘['手数'].sum() * 100 / 总量) #/ (len(dates) - i)
     except:
+        import traceback
+        traceback.print_exc()
         评分 = 0
 
     # 根据不同资金量的数量，给与不同的权重分数，庄家权重最大，散户最小。
@@ -296,15 +293,17 @@ def evaluate(code,info,dates):
     游资权重 = 0.1
     主力权重 = 0.2
     庄家权重 = 0.7
-    套牢权重 = 1
-    评分 = 散户.shape[0] * 散户权重 + 游资.shape[0] * 游资权重 + 主力.shape[0] * 主力权重 + 庄家.shape[0] * 庄家权重 + 套牢量 * 套牢权重
-    if 评分 < 1: return None
+    套牢权重 = 1.0
+    支撑线权重 = 1.0
+
+    评分 = len(散户) * 散户权重 + len(游资) * 游资权重 + len(主力) * 主力权重 + len(庄家) * 庄家权重 + 套牢量 * 套牢权重
+    if 评分 == 0: return None
 
     r = {
         '代码': info['代码'],
         '名称': info['名称'],
         '评分': float(round(评分,2)),
-        '散户,游资,主力,庄家': f'{散户},{游资},{主力},{庄家}',
+        '散户,游资,主力,庄家': f'{len(散户)},{len(游资)},{len(主力)},{len(庄家)}',
         '套牢量': f'{float(round(套牢量,2))}%',
         '套牢盘': f'{float(round(套牢资金/1e8,1))}亿',
     }
@@ -322,15 +321,20 @@ def up(worker_req : mp.Queue,*args):
     end = datetime.strptime(date,'%Y%m%d')
     start = end - timedelta(days)
     dates = [d.strftime('%Y%m%d') for d in pd.date_range(start,end,freq='1D')][1:]
-    
+     
     stocks.apply(lambda r: worker_req.put((worker_res,'evaluate',r['代码'],r,dates)), axis=1)
 
-    for _ in range(stocks.shape[0]):
-        _,_,_,_,res = worker_res.get()    
+    rows = []
+    for i in range(stocks.shape[0]):
+        _,_,_,_,res = worker_res.get()
+        res : dict    
         if not res: continue 
-        print(res,flush=True)
-        
-    return None
+        if not rows:
+            print(' ',','.join(res.keys()),flush=True)
+        rows.append(res)
+        print(f'{i},{','.join(str(v) for v in res.values())}',flush=True)
+
+    return pd.DataFrame(rows)
     
 def play(worker_req : mp.Queue,codes,date,days):
     start = datetime.strptime(date,'%y%m%d')
@@ -377,11 +381,6 @@ def sync_stock_intraday(code,date):
     if not os.path.exists(filepath) or 0 == os.path.getsize(filepath):
         df = get_stock_intraday(code)
         df.to_csv(filepath,index=False)
-
-    # filepath = os.path.join(db_dir,f'{code}-{date}-信息.csv')
-    # if not os.path.exists(filepath) or 0 == os.path.getsize(filepath):
-    #     df = get_stock_info(code)
-    #     df.to_csv(filepath,index=False)
 
 def get_stock_info(code):
     i = 1
@@ -448,11 +447,7 @@ if __name__ == '__main__':
     shared = mp.Manager()
     worker_req = shared.Queue()
     log = shared.list()
-
-    for i in range(os.cpu_count()):
-        process = mp.Process(target=worker,name=f'牛马-{i}',args=[i,worker_req],daemon=True)
-        process.start()
- 
+    
     while True:
         if len(sys.argv) > 1:
             cmd = sys.argv[1:]
@@ -473,10 +468,20 @@ if __name__ == '__main__':
         args = parser.parse_args(cmd)
         
         if args.mode == 'sync':
+            process = mp.Process(target=worker,name=f'牛马-0',args=[i,worker_req],daemon=True)
+            process.start()
             threading.Thread(target=data_syncing_of_stock_intraday,args=[worker_req,log],name='股票数据同步',daemon=True).start()
         elif args.mode == 'up':
+            for i in range(os.cpu_count()-1):
+                process = mp.Process(target=worker,name=f'牛马-{i+1}',args=[i,worker_req],daemon=True)
+                process.start()
             codes = args.code.split(',')
             up(worker_req,codes,args.date,args.days,args.cap)
+        elif args.mode == 'evaluate':
+            stocks = pd.read_csv(os.path.join(db_dir,f'0-{args.date}-行情.csv'),dtype={'代码':str})
+            stocks_seleted = stocks[stocks['代码'] == args.code]
+            info = stocks_seleted.iloc[0]
+            print(evaluate(args.code,info,[args.date]))
         elif args.mode == 'measure':
             已有交易 = None
             已有特征 = None
@@ -511,7 +516,6 @@ if __name__ == '__main__':
             
             已有交易 = 交易
             已有特征 = 特征
-
         elif args.mode == 'test':
             pass
         elif args.mode == 'exit':
