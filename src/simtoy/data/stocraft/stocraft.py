@@ -447,6 +447,7 @@ if __name__ == '__main__':
     shared = mp.Manager()
     worker_req = shared.Queue()
     log = shared.list()
+    pi = 0
     
     while True:
         if len(sys.argv) > 1:
@@ -468,12 +469,13 @@ if __name__ == '__main__':
         args = parser.parse_args(cmd)
         
         if args.mode == 'sync':
-            process = mp.Process(target=worker,name=f'牛马-0',args=[i,worker_req],daemon=True)
-            process.start()
+            for i in range(os.cpu_count() - pi):
+                process = mp.Process(target=worker,name=f'牛马-{i}',args=[i,worker_req],daemon=True)
+                process.start()
             threading.Thread(target=data_syncing_of_stock_intraday,args=[worker_req,log],name='股票数据同步',daemon=True).start()
         elif args.mode == 'up':
-            for i in range(os.cpu_count()-1):
-                process = mp.Process(target=worker,name=f'牛马-{i+1}',args=[i,worker_req],daemon=True)
+            for i in range(os.cpu_count() - pi):
+                process = mp.Process(target=worker,name=f'牛马-{i}',args=[i,worker_req],daemon=True)
                 process.start()
             codes = args.code.split(',')
             up(worker_req,codes,args.date,args.days,args.cap)
