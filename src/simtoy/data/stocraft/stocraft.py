@@ -256,22 +256,21 @@ def evaluate(code,info,dates : list):
     套牢量 = 0.0
     套牢资金 = 0.0
     支撑点 = []
-
-    for date in dates:
-        filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
-        if not os.path.exists(filepath): dates.remove(date)
         
-    最后交易 = pd.read_csv(os.path.join(db_dir,f'{code}-{dates[-1]}-交易.csv'),dtype={'代码':str})
-    # 得到最后的价格
-    最后价格 = 最后交易['成交价'].iloc[-1]
-
     try:
         for i,date in enumerate(dates):
             filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
+            if not os.path.exists(filepath): i-=1; continue
 
             交易 = pd.read_csv(filepath,dtype={'代码':str})
             特征 = feature(交易)
+
+            if i == 0:
+                # 得到最后的价格
+                最新价格 = 交易['成交价'].iloc[-1]
             
+            # print(i,最新价格,filepath,flush=True)
+
             # 统计特征中，大单的区间，500万以下，500~1000万，1000~2000万，2000万以上的数量，分别用散户，游资，主力，庄家来表示。
             散户 += 特征[特征['总价'] <= 5e7].values.tolist()
             游资 += 特征[(特征['总价'] > 5e7) & (特征['总价'] <= 1e8)].values.tolist()
@@ -279,21 +278,22 @@ def evaluate(code,info,dates : list):
             庄家 += 特征[特征['总价'] > 2e8].values.tolist()
             
             # 计算出这个价格之上有多少套牢盘
-            套牢盘 = 交易[(交易['买卖盘性质'] != '中性盘') & (交易['成交价'] > 最后价格)]
+            套牢盘 = 交易[(交易['买卖盘性质'] != '中性盘') & (交易['成交价'] > 最新价格)]
             总价 = 套牢盘['成交价']  * 套牢盘['手数'] * 100
-            套牢资金 = 总价.sum() #/ (len(dates) - i)
-            套牢量 = (套牢盘['手数'].sum() * 100 / 总量) #/ (len(dates) - i)
+            套牢资金 += 总价.sum() / (i+1)
+            套牢量 += (套牢盘['手数'].sum() * 100 / 总量) / (i+1)
     except:
         import traceback
         traceback.print_exc()
+        print('评估失败',code,info['名称'],date,flush=True, file=sys.stderr)
         评分 = 0
 
     # 根据不同资金量的数量，给与不同的权重分数，庄家权重最大，散户最小。
-    散户权重 = 0.0
+    散户权重 = 0.001
     游资权重 = 0.1
-    主力权重 = 0.2
-    庄家权重 = 0.7
-    套牢权重 = 1.0
+    主力权重 = 0.5
+    庄家权重 = 2.0
+    套牢权重 = 0.1
     支撑线权重 = 1.0
 
     评分 = len(散户) * 散户权重 + len(游资) * 游资权重 + len(主力) * 主力权重 + len(庄家) * 庄家权重 + 套牢量 * 套牢权重
@@ -313,7 +313,8 @@ def up(worker_req : mp.Queue,*args):
     worker_res = shared.Queue()
     codes,date,days,cap = args
 
-    stocks = pd.read_csv(os.path.join(db_dir,f'0-{date}-行情.csv'),dtype={'代码':str})
+    get_stock_spot()
+    stocks = pd.read_csv(os.path.join(db_dir,f'0-0-行情.csv'),dtype={'代码':str})
     stocks_seleted = stocks[stocks['代码'].isin(codes)]
     stocks = stocks[(stocks['流通市值'] >= cap[0] * 1e8) & (stocks['流通市值'] <= cap[1] * 1e8)]
     stocks = pd.concat([stocks, stocks_seleted], ignore_index=True).drop_duplicates()
@@ -321,7 +322,7 @@ def up(worker_req : mp.Queue,*args):
     end = datetime.strptime(date,'%Y%m%d')
     start = end - timedelta(days)
     dates = [d.strftime('%Y%m%d') for d in pd.date_range(start,end,freq='1D')][1:]
-     
+    dates.reverse()
     stocks.apply(lambda r: worker_req.put((worker_res,'evaluate',r['代码'],r,dates)), axis=1)
 
     rows = []
@@ -349,30 +350,43 @@ def get_stock_spot():
     h15 = datetime.now().replace(hour=15, minute=0, second=0)
 
     stocks_file_path = os.path.join(db_dir,f'0-0-行情.csv')
-
-    try:
-        if os.path.exists(stocks_file_path) and h15.date() == datetime.fromtimestamp(os.path.getmtime(stocks_file_path)).date():
-            stocks = pd.read_csv(stocks_file_path,dtype={'代码':str})
-        elif not os.path.exists(stocks_file_path) or h15.weekday() < 5 and h15 < datetime.now():
-            stocks = ak.stock_zh_a_spot_em()
-            condition = ((stocks['代码'].str.startswith('00')) | (stocks['代码'].str.startswith('60'))) & \
-                        (~stocks['名称'].str.startswith('PT')) & \
-                        (~stocks['名称'].str.startswith('ST')) & \
-                        (~stocks['名称'].str.startswith('*ST')) & \
-                        (~stocks['最新价'].isnull()) & \
-                        (stocks['换手率'] > 0.001)
-            stocks = stocks[condition].reset_index(drop=True)
-            stocks.to_csv(stocks_file_path,index=False)
-            spot_filepath = os.path.join(db_dir,f'0-{h15.strftime("%Y%m%d")}-行情.csv')
-            stocks.to_csv(spot_filepath,index=False) 
-        else:
-            raise Exception('获取股票行情失败')
-    except:
-        file_paths = glob.glob(os.path.join(db_dir, '0-*-行情.csv'))
-        if not file_paths:
-            return None
+    # 判断文件时间是否超过一周，超过则重新获取，否则使用现有文件
+    if os.path.exists(stocks_file_path) and h15.date() - datetime.fromtimestamp(os.path.getmtime(stocks_file_path)).date() > timedelta(7):
+        stocks = ak.stock_zh_a_spot_em()
+        condition = ((stocks['代码'].str.startswith('00')) | (stocks['代码'].str.startswith('60'))) & \
+                    (~stocks['名称'].str.startswith('PT')) & \
+                    (~stocks['名称'].str.startswith('ST')) & \
+                    (~stocks['名称'].str.startswith('*ST')) & \
+                    (~stocks['最新价'].isnull()) & \
+                    (stocks['换手率'] > 0.001)
+        stocks = stocks[condition].reset_index(drop=True)
+        stocks.to_csv(stocks_file_path,index=False)
+    else:
+        stocks = pd.read_csv(stocks_file_path,dtype={'代码':str})
         
-        stocks = pd.read_csv(file_paths[-1],dtype={'代码':str})
+    # try:
+    #     if os.path.exists(stocks_file_path) and h15.date() == datetime.fromtimestamp(os.path.getmtime(stocks_file_path)).date():
+    #         stocks = pd.read_csv(stocks_file_path,dtype={'代码':str})
+    #     elif not os.path.exists(stocks_file_path) or h15.weekday() < 5 and h15 < datetime.now():
+    #         stocks = ak.stock_zh_a_spot_em()
+    #         condition = ((stocks['代码'].str.startswith('00')) | (stocks['代码'].str.startswith('60'))) & \
+    #                     (~stocks['名称'].str.startswith('PT')) & \
+    #                     (~stocks['名称'].str.startswith('ST')) & \
+    #                     (~stocks['名称'].str.startswith('*ST')) & \
+    #                     (~stocks['最新价'].isnull()) & \
+    #                     (stocks['换手率'] > 0.001)
+    #         stocks = stocks[condition].reset_index(drop=True)
+    #         stocks.to_csv(stocks_file_path,index=False)
+    #         spot_filepath = os.path.join(db_dir,f'0-{h15.strftime("%Y%m%d")}-行情.csv')
+    #         stocks.to_csv(spot_filepath,index=False) 
+    #     else:
+    #         raise Exception('获取股票行情失败')
+    # except:
+    #     file_paths = glob.glob(os.path.join(db_dir, '0-*-行情.csv'))
+    #     if not file_paths:
+    #         return None
+        
+    #     stocks = pd.read_csv(file_paths[-1],dtype={'代码':str})
 
     return stocks
 
@@ -469,14 +483,16 @@ if __name__ == '__main__':
         args = parser.parse_args(cmd)
         
         if args.mode == 'sync':
-            for i in range(os.cpu_count() - pi):
+            for i in range(pi,os.cpu_count()):
                 process = mp.Process(target=worker,name=f'牛马-{i}',args=[i,worker_req],daemon=True)
                 process.start()
+                pi += 1
             threading.Thread(target=data_syncing_of_stock_intraday,args=[worker_req,log],name='股票数据同步',daemon=True).start()
         elif args.mode == 'up':
-            for i in range(os.cpu_count() - pi):
+            for i in range(pi,os.cpu_count()):
                 process = mp.Process(target=worker,name=f'牛马-{i}',args=[i,worker_req],daemon=True)
                 process.start()
+                pi += 1
             codes = args.code.split(',')
             up(worker_req,codes,args.date,args.days,args.cap)
         elif args.mode == 'evaluate':
