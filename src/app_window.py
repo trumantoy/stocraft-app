@@ -63,9 +63,9 @@ class AppWindow (Gtk.ApplicationWindow):
         self.scene.add(self.light)
 
         self.tool = Stocraft()
-        self.tool.set_code('002590')
         self.tool.local.z = 0.001
         self.scene.add(self.tool)
+        self.panel.bind_owner(self.tool)
         
         # self.hotbar.connect('item-added', self.item_added)
         # self.hotbar.bind_owner(self.tool)
@@ -77,8 +77,6 @@ class AppWindow (Gtk.ApplicationWindow):
         # # self.panel.add_device(self.tool)
         # self.panel.connect('preview', self.preview)
 
-        GLib.timeout_add(1000/180,lambda: self.scene.step(1/180,self.scene.camera_controller.cameras[0],self.canvas) or True)
-
     def do_size_allocate(self, width: int, height: int, baseline: int):
         if hasattr(self,'prev_width'): 
             panel = self.stack.get_visible_child()
@@ -88,7 +86,7 @@ class AppWindow (Gtk.ApplicationWindow):
         self.prev_width = width
         Gtk.ApplicationWindow.do_size_allocate(self,width,height,baseline)
 
-    def draw(self,area, cr : cairo.Context, area_w, area_h):
+    def draw(self,area, cr : cairo.Context, area_w, area_h):        
         width,height = self.canvas.get_physical_size()
 
         if width != area_w or height != area_h: 
@@ -97,7 +95,8 @@ class AppWindow (Gtk.ApplicationWindow):
             self.scene.camera_controller.register_events(self.renderer)
         
         camera = self.scene.camera_controller.cameras[0]
-        self.light.local.position = camera.local.position
+        # self.light.local.position = camera.local.position
+        self.scene.step(1/180,self.scene.camera_controller.cameras[0],self.canvas)
         self.renderer.render(self.scene, camera)
         
         img : np.ndarray = np.asarray(self.canvas.draw())
@@ -109,5 +108,5 @@ class AppWindow (Gtk.ApplicationWindow):
         cr.set_source_surface(surface, 0, 0)
 
         cr.paint()
-
+        
         GLib.idle_add(area.queue_draw)

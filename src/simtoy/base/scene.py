@@ -25,44 +25,22 @@ class Editor(gfx.Scene):
         self.camera_controller = gfx.OrbitController()
         self.camera_controller.add_camera(self.persp_camera)
         self.camera_controller.add_camera(self.ortho_camera)
-        
-        grid0 = gfx.Grid(
-            gfx.box_geometry(),
-            gfx.GridMaterial(
-                major_step=1,
-                minor_step=0.1,
-                thickness_space="world",
-                axis_thickness=0,
-                major_thickness=0.005,
-                minor_thickness=0.001,
-                infinite=True,
-            ),
-            orientation="xy",
-        )
-        self.add(grid0)
 
         self.skybox = SkyBox()
         self.add(self.skybox)
 
-        self.env_map = self.skybox.material.map
-
         self.ground = Ground()
-        self.ground.receive_shadow = True
         self.ground.local.z -= 0.001
-        self.ground.material.env_map = self.env_map
-
         self.add(self.ground)
 
         ambient = gfx.AmbientLight()
         self.add(ambient)
 
-        light = light = gfx.DirectionalLight(cast_shadow = True)
+        light = gfx.DirectionalLight()
         light.local.position = (0.2, -1, 0.3)
         light.shadow.camera.width = light.shadow.camera.height = 1
         self.add(light)
 
-        
-        
     def step(self,dt=1/180,*args):
         if self.steps:
             self.steps[0]()

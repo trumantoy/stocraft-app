@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 import pygfx as gfx
 from rendercanvas.offscreen import RenderCanvas
 import math as m
@@ -10,13 +11,8 @@ import numpy as np
 class Stocraft(gfx.WorldObject):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-        # 创建一个平面 作为 Stocraft 的可视化表示
-        # plane = gfx.plane_geometry()
-        # material = gfx.MeshBasicMaterial(color=(0.5,0.5,0.5,0.5))
-        # mesh = gfx.Mesh(plane, material)
-        # self.add(mesh)
-        
+        self.steps = list()
+     
         start = m.log(1,1.01)
         end = m.log(100,1.01)
 
@@ -31,21 +27,67 @@ class Stocraft(gfx.WorldObject):
         axis_z = gfx.Ruler(start_pos=(0,0,0), end_pos=(0,0,1))
         self.add(axis_z)
 
-        self.process = None
+        self.up_process = None
+        self.stocks = None
 
-    def set_code(self, code: str):
-        self.code = code
+    def step(self, dt: float,camera: gfx.Camera, canvas : RenderCanvas):
+        for ob in self.children:
+            if isinstance(ob, gfx.Ruler):
+                ob.update(camera, canvas.get_logical_size())
+        
+        if not self.steps:
+            return 
+        
+        f = self.steps.pop(0)
+        if f(): self.steps.append(f)
 
+    def cmd_up(self, days = 5):
+        if self.up_process:
+            self.up_process.terminate()
+
+        # 得到当天的时间，如果超过15点，取当天，否则取前一天
+        now = datetime.now()
+        if now.hour >= 15:
+            date = now.date().strftime('%Y%m%d')
+        else:
+            date = (now.date() - timedelta(days=1)).strftime('%Y%m%d')
+
+        file = files("simtoy.data.stocraft") / "stocraft.py"
+        self.up_process = sp.Popen(["python", file.as_posix(), 'up','--date',f'{date}','--days',f'{days}'],stdin=sp.PIPE,stdout=sp.PIPE,encoding='utf-8')
+        print(' '.join(["python", file.as_posix(), 'up','--date',f'{date}','--days',f'{days}']))
+
+
+        def f():
+            if self.up_process.poll() is not None: return False
+            line = self.up_process.stdout.readline().strip()
+            if not line: return True
+
+            print(line)
+            if line == '-': 
+                self.up_process.stdin.write('exit\n')
+                self.up_process.stdin.flush()
+                return False
+
+            if self.stocks is None:
+                # 第一行是列名，用它创建DataFrame，然后填充N行数据
+                self.stocks = pd.DataFrame(columns=line.split(','),dtype=str)
+                self.stocks.index = [i for i in range(10000)]
+            else:
+                # 后续行是数据，用它添加到DataFrame，第0列是索引，从1开始
+                self.stocks.loc[len(self.stocks)] = line.split(',')[1:]
+            return True
+
+        self.steps.append(f)
+
+    def cmd_measure(self,code):
         if self.process:
             self.process.terminate()
 
-        file = files("simtoy.data.stocraft") / "stocraft.py"
-        self.process = sp.Popen(["python", file.as_posix(), 'measure','--code', code],stdin=sp.PIPE,stdout=sp.PIPE,encoding='utf-8')
-        self.df = pd.DataFrame()
-        measuring = threading.Thread(target=self.measure, args=(self.process,self.df),daemon=True)
-        measuring.start()
+        df = pd.DataFrame()
 
-    def measure(self, p:sp.Popen, df:pd.DataFrame):
+        file = files("simtoy.data.stocraft") / "stocraft.py"
+        p = sp.Popen(["python", file.as_posix(), 'measure','--code', code],stdin=sp.PIPE,stdout=sp.PIPE,encoding='utf-8')
+
         line = p.stdout.readline().strip()
         df.index = [i for i in range(10000)]
         df[line.split(',')] = np.full((10000,4),np.nan)
@@ -62,9 +104,3 @@ class Stocraft(gfx.WorldObject):
             end = id
             
         print(df.loc[:end])
-
-    def step(self, dt: float,camera: gfx.Camera, canvas : RenderCanvas):
-        for ob in self.children:
-            if isinstance(ob, gfx.Ruler):
-                ob.update(camera, canvas.get_logical_size())
-                
