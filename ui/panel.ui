@@ -16,7 +16,14 @@
                 </child>
 
                 <child>
-                    <object class="GtkListView" id="geoms">
+                    <object class="GtkButton" id="candidate">
+                        <property name="label">候选</property>
+                        <signal name="clicked" handler="on_btn_candidate_clicked"/>
+                    </object>
+                </child>
+
+                <child>
+                    <object class="GtkListView" id="spots">
                         <property name="vexpand">True</property>
                     </object>
                 </child>
