@@ -41,15 +41,16 @@ def feature(交易,已有特征=None,interval_seconds = 10):
     均价 = 总价 / 总量
     均点 = m.log(总价 / 总量,1.01)
     起点 = 终点 = round(成交点)
-    当前 = 起时,终时,起价,终价,总价,均价,买卖盘性质,成交点,成交点
+    当前 = 起时,终时,起价,终价,总价,均价,买卖盘性质,起点,终点
 
     rows = 已有特征.values.tolist()
     for i,r in 交易.iterrows():
         时间,成交价,手数,买卖盘性质,成交点 = r['时间'],r['成交价'],r['手数'],r['买卖盘性质'],r['成交点']
         if 买卖盘性质 == '中性盘' or 手数 == 0:
+            i -= 1
             continue
         
-        if 时间.startswith('09:25'):
+        if i == 0:
             起时 = 终时 = 时间
             起价 = 终价 = 成交价
             总量 = 手数 * 100
@@ -256,8 +257,10 @@ def evaluate(code,info,dates : list):
     套牢量 = 0.0
     套牢资金 = 0.0
     均价 = set()
+    均点 = set()
     最新日期 = None
     最新价格 = None
+    最新点 = None
     try:
         for i,date in enumerate(dates):
             filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
@@ -269,6 +272,7 @@ def evaluate(code,info,dates : list):
             if not 最新价格:
                 # 得到最后的价格
                 最新价格 = 交易['成交价'].iloc[-1]
+                最新点 = m.log(最新价格,1.01)
                 最新日期 = date
             
             # 统计特征中，大单的区间，500万以下，500~1000万，1000~2000万，2000万以上的数量，分别用散户，游资，主力，庄家来表示。
@@ -284,12 +288,16 @@ def evaluate(code,info,dates : list):
             # 记录支撑价
             均价.update(庄家特征['均价'].values.tolist())
             均价.update(主力特征['均价'].values.tolist())
+            均点.update(庄家特征['均点'].values.tolist())
+            均点.update(主力特征['均点'].values.tolist())
             
             # 计算出这个价格之上有多少套牢盘
             套牢盘 = 交易[(交易['买卖盘性质'] != '中性盘') & (交易['成交价'] > 最新价格)]
             总价 = 套牢盘['成交价']  * 套牢盘['手数'] * 100
             套牢资金 += 总价.sum() / (i+1)
             套牢量 += (套牢盘['手数'].sum() * 100 / 总量) / (i+1)
+
+
     except:
         import traceback
         traceback.print_exc()
@@ -303,11 +311,21 @@ def evaluate(code,info,dates : list):
     主力权重 = 0.5
     庄家权重 = 2.0
     套牢权重 = 0.05
+    支撑权重 = 0.1
 
-    评分 = len(散户) * 散户权重 + len(游资) * 游资权重 + len(主力) * 主力权重 + len(庄家) * 庄家权重 + 套牢量 * 套牢权重
+    # 计算最新点 在均点的
+    if not 均点:
+        支撑 = 0
+    else:
+        支撑 = np.mean(list(均点)) - 最新点
+
+    if m.isnan(支撑) or 支撑 < 0: 支撑 = 0
+
+    评分 = len(散户) * 散户权重 + len(游资) * 游资权重 + len(主力) * 主力权重 + len(庄家) * 庄家权重 + 套牢量 * 套牢权重 + 支撑 * 支撑权重
     if 评分 == 0: return None
 
     r = {
+        '日期': 最新日期,
         '代码': info['代码'],
         '名称': info['名称'],
         '评分': float(round(评分,2)),
@@ -315,7 +333,7 @@ def evaluate(code,info,dates : list):
         '套牢量': f'{float(round(套牢量,2))}%',
         '套牢盘': f'{float(round(套牢资金/1e8,1))}亿',
         '均价': list(均价),
-        '日期': 最新日期
+        '支撑': round(支撑,1)
     }
     return r
 
