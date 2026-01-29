@@ -314,10 +314,8 @@ def evaluate(code,info,dates : list):
     支撑权重 = 0.1
 
     # 计算最新点 在均点的
-    if not 均点:
-        支撑 = 0
-    else:
-        支撑 = np.mean(list(均点)) - 最新点
+    支撑 = 0
+    if 均点: 支撑 = np.mean(list(均点)) - 最新点
 
     if m.isnan(支撑) or 支撑 < 0: 支撑 = 0
 
