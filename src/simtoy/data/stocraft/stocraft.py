@@ -40,7 +40,8 @@ def feature(交易,已有特征=None,interval_seconds = 10):
     总价 = (成交价 * 总量) / 1e4
     均价 = 总价 / 总量
     均点 = m.log(总价 / 总量,1.01)
-    当前 = 起时,终时,起价,终价,总价,均价,买卖盘性质
+    起点 = 终点 = round(成交点)
+    当前 = 起时,终时,起价,终价,总价,均价,买卖盘性质,成交点,成交点
 
     rows = 已有特征.values.tolist()
     for i,r in 交易.iterrows():
@@ -55,8 +56,7 @@ def feature(交易,已有特征=None,interval_seconds = 10):
             总价 = 成交价 * 总量
             均价 = 总价 / 总量
             均点 = m.log(总价 / 总量,1.01)
-            起点 = round(成交点)
-            终点 = round(成交点)
+            起点 = 终点 = round(成交点)
             当前 = 起时,终时,起价,终价,总价,均价,买卖盘性质,起点,终点
         else:
             _,终时,_,终价,_,均价,性质,_,终点 = 当前
@@ -255,8 +255,9 @@ def evaluate(code,info,dates : list):
     庄家 = []
     套牢量 = 0.0
     套牢资金 = 0.0
-    支撑点 = []
-        
+    均价 = set()
+    最新日期 = None
+    最新价格 = None
     try:
         for i,date in enumerate(dates):
             filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
@@ -265,17 +266,24 @@ def evaluate(code,info,dates : list):
             交易 = pd.read_csv(filepath,dtype={'代码':str})
             特征 = feature(交易)
 
-            if i == 0:
+            if not 最新价格:
                 # 得到最后的价格
                 最新价格 = 交易['成交价'].iloc[-1]
+                最新日期 = date
             
-            # print(i,最新价格,filepath,flush=True)
-
             # 统计特征中，大单的区间，500万以下，500~1000万，1000~2000万，2000万以上的数量，分别用散户，游资，主力，庄家来表示。
-            散户 += 特征[特征['总价'] <= 5e7].values.tolist()
-            游资 += 特征[(特征['总价'] > 5e7) & (特征['总价'] <= 1e8)].values.tolist()
-            主力 += 特征[特征['总价'] > 1e8].values.tolist()
-            庄家 += 特征[特征['总价'] > 2e8].values.tolist()
+            买入特征 = 特征[(特征['终点'] - 特征['起点'] > 1)]
+
+            散户 += 买入特征[买入特征['总价'] <= 5e7].values.tolist()
+            游资 += 买入特征[(买入特征['总价'] > 5e7) & (买入特征['总价'] <= 1e8)].values.tolist()
+            主力特征 = 买入特征[买入特征['总价'] > 1e8]
+            主力 += 主力特征.values.tolist()
+            庄家特征 = 买入特征[买入特征['总价'] > 2e8]
+            庄家 += 庄家特征.values.tolist()
+
+            # 记录支撑价
+            均价.update(庄家特征['均价'].values.tolist())
+            均价.update(主力特征['均价'].values.tolist())
             
             # 计算出这个价格之上有多少套牢盘
             套牢盘 = 交易[(交易['买卖盘性质'] != '中性盘') & (交易['成交价'] > 最新价格)]
@@ -288,13 +296,13 @@ def evaluate(code,info,dates : list):
         print('评估失败',code,info['名称'],date,flush=True, file=sys.stderr)
         评分 = 0
 
+
     # 根据不同资金量的数量，给与不同的权重分数，庄家权重最大，散户最小。
-    散户权重 = 0.001
-    游资权重 = 0.1
+    散户权重 = 0.05
+    游资权重 = 0.2
     主力权重 = 0.5
     庄家权重 = 2.0
-    套牢权重 = 0.1
-    支撑线权重 = 1.0
+    套牢权重 = 0.05
 
     评分 = len(散户) * 散户权重 + len(游资) * 游资权重 + len(主力) * 主力权重 + len(庄家) * 庄家权重 + 套牢量 * 套牢权重
     if 评分 == 0: return None
@@ -303,9 +311,11 @@ def evaluate(code,info,dates : list):
         '代码': info['代码'],
         '名称': info['名称'],
         '评分': float(round(评分,2)),
-        '散户,游资,主力,庄家': f'{len(散户)},{len(游资)},{len(主力)},{len(庄家)}',
+        '散户&游资&主力&庄家': f'[{len(散户)},{len(游资)},{len(主力)},{len(庄家)}]',
         '套牢量': f'{float(round(套牢量,2))}%',
         '套牢盘': f'{float(round(套牢资金/1e8,1))}亿',
+        '均价': list(均价),
+        '日期': 最新日期
     }
     return r
 
@@ -330,11 +340,9 @@ def up(worker_req : mp.Queue,*args):
         _,_,_,_,res = worker_res.get()
         res : dict    
         if not res: continue 
-        if not rows:
-            print(' ',','.join(res.keys()),flush=True)
-        rows.append(res)
+        if i == 0: print(' ',','.join(res.keys()),flush=True)
         print(f'{i},{','.join(str(v) for v in res.values())}',flush=True)
-
+        # rows.append(res)
     return pd.DataFrame(rows)
     
 def play(worker_req : mp.Queue,codes,date,days):
