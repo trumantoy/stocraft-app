@@ -5,6 +5,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk, GObject, Gio, Gdk
 
 import threading
+import pandas as pd
 import pygfx as gfx
 
 @Gtk.Template(filename='ui/panel.ui')
@@ -15,16 +16,46 @@ class Panel (Gtk.ScrolledWindow):
     lsv_spots = Gtk.Template.Child('spots')
     btn_candidate = Gtk.Template.Child('candidate')
     entry_code = Gtk.Template.Child('code')
+    spin_score = Gtk.Template.Child('score')
+    spin_days = Gtk.Template.Child('days')
     
     def __init__(self):
         self.provider.load_from_path('ui/panel.css')
         Gtk.StyleContext.add_provider_for_display(self.get_display(),self.provider,Gtk.STYLE_PROVIDER_PRIORITY_USER)
+
+        self.model = Gtk.StringList()
+        self.selection = Gtk.SingleSelection.new(self.model)
+        self.selection.set_autoselect(True)
+        self.selection.set_can_unselect(True)
+
+        factory = Gtk.SignalListItemFactory()
+        factory.connect("setup", self.setup_listitem)
+        factory.connect("bind", self.bind_listitem)
+        self.lsv_spots.set_factory(factory)
+
+        self.lsv_spots.set_model(self.selection)
+
+        self.connect('unmap',self.on_unmap)
+
+    def on_unmap(self,widget):
+        self.stocraft.up_process.terminate()
 
     def bind_owner(self, tool):
         self.stocraft : Stocraft = tool
 
     @Gtk.Template.Callback()
     def on_btn_candidate_clicked(self,sender):
-        self.stocraft.cmd_up()
+        self.stocraft.cmd_up(self.spin_days.get_value(),func=self.update_stocks)
 
-        self.df = self.stocraft.stocks
+    def setup_listitem(self, factory, lsi):
+        lsi.set_child(Gtk.Label())
+
+    def bind_listitem(self, factory, lsi):
+        label = lsi.get_child()
+        code = lsi.get_item().get_string()
+        df = self.df[self.df['代码'] == code]
+        label.set_text(df.iloc[0].to_string())
+
+    def update_stocks(self,df,row):
+        self.df = df
+        if float(row[3]) > self.spin_score.get_value(): GLib.idle_add(self.model.append,row[3])

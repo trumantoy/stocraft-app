@@ -41,7 +41,7 @@ class Stocraft(gfx.WorldObject):
         f = self.steps.pop(0)
         if f(): self.steps.append(f)
 
-    def cmd_up(self, days = 5):
+    def cmd_up(self, days = 7, func = None):
         if self.up_process:
             self.up_process.terminate()
 
@@ -56,28 +56,29 @@ class Stocraft(gfx.WorldObject):
         self.up_process = sp.Popen(["python", file.as_posix(), 'up','--date',f'{date}','--days',f'{days}'],stdin=sp.PIPE,stdout=sp.PIPE,encoding='utf-8')
         print(' '.join(["python", file.as_posix(), 'up','--date',f'{date}','--days',f'{days}']))
 
-
         def f():
-            if self.up_process.poll() is not None: return False
-            line = self.up_process.stdout.readline().strip()
-            if not line: return True
+            while True:
+                line = self.up_process.stdout.readline().strip()
+                if line: 
+                    print(line,flush=True)
+                    if line == '-': 
+                        self.up_process.stdin.write('exit\n')
+                        self.up_process.stdin.flush()
 
-            print(line)
-            if line == '-': 
-                self.up_process.stdin.write('exit\n')
-                self.up_process.stdin.flush()
-                return False
+                    if self.stocks is None:
+                        # 第一行是列名，用它创建DataFrame，然后填充N行数据
+                        columns = line.split(',')
+                        self.stocks = pd.DataFrame(columns=columns,data=np.full((10000,len(columns)),''),index=range(10000),dtype=str)
+                    else:
+                        # 后续行是数据，用它添加到DataFrame，第0列是索引，从1开始
+                        row = line.split(',')
+                        self.stocks.loc[len(self.stocks)] = row[1:]
+                        func(self.stocks,row)
 
-            if self.stocks is None:
-                # 第一行是列名，用它创建DataFrame，然后填充N行数据
-                self.stocks = pd.DataFrame(columns=line.split(','),dtype=str)
-                self.stocks.index = [i for i in range(10000)]
-            else:
-                # 后续行是数据，用它添加到DataFrame，第0列是索引，从1开始
-                self.stocks.loc[len(self.stocks)] = line.split(',')[1:]
-            return True
+                if self.up_process.poll() is not None: break
 
-        self.steps.append(f)
+        # self.steps.append(f)
+        threading.Thread(target=f,daemon=True).start()
 
     def cmd_measure(self,code):
         if self.process:

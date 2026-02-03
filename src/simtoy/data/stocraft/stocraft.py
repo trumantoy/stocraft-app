@@ -240,6 +240,14 @@ def evaluate(code,info,dates : list):
     成交量 = info['成交量']
     总量 = 成交量 / (换手率 / 100) if 换手率 else 0
     
+    散户权重 = 0.1
+    游资权重 = 0.2
+    主力权重 = 0.5
+    庄家权重 = 2.0
+    套牢权重 = 0.1
+    底部权重 = 0.2
+    筹码累计权重 = 1.7
+
     评分 = 0
     散户 = []
     游资 = []
@@ -285,32 +293,26 @@ def evaluate(code,info,dates : list):
             # 计算出这个价格之上有多少套牢盘
             套牢盘 = 交易[(交易['买卖盘性质'] != '中性盘') & (交易['成交价'] > 最新价格)]
             总价 = 套牢盘['成交价']  * 套牢盘['手数'] * 100
-            套牢资金 += 总价.sum() / (i+1)
-            套牢量 += (套牢盘['手数'].sum() * 100 / 总量) / (i+1)
-
+            套牢资金 += 总价.sum() * m.pow(筹码累计权重,-i)
+            套牢量 += (套牢盘['手数'].sum() * 100 / 总量) * m.pow(筹码累计权重,-i)
 
     except:
         import traceback
         traceback.print_exc()
         print('评估失败',code,info['名称'],date,flush=True, file=sys.stderr)
         评分 = 0
-
-
-    # 根据不同资金量的数量，给与不同的权重分数，庄家权重最大，散户最小。
-    散户权重 = 0.05
-    游资权重 = 0.2
-    主力权重 = 0.5
-    庄家权重 = 2.0
-    套牢权重 = 0.05
-    支撑权重 = 0.1
+    
+    均价 = list(均价)
+    均价.sort()
 
     # 计算最新点 在均点的
-    支撑 = 0
-    if 均点: 支撑 = np.mean(list(均点)) - 最新点
+    底部 = 0
+    if 均点: 
+        底部 = np.min(list(均点)) - 最新点
 
-    if m.isnan(支撑) or 支撑 < 0: 支撑 = 0
+    if m.isnan(底部) or 底部 < 0: 底部 = 0
 
-    评分 = len(散户) * 散户权重 + len(游资) * 游资权重 + len(主力) * 主力权重 + len(庄家) * 庄家权重 + 套牢量 * 套牢权重 + 支撑 * 支撑权重
+    评分 = len(散户) * 散户权重 + len(游资) * 游资权重 + len(主力) * 主力权重 + len(庄家) * 庄家权重 + 套牢量 * 套牢权重 + 底部 * 底部权重
     if 评分 == 0: return None
 
     r = {
@@ -318,11 +320,11 @@ def evaluate(code,info,dates : list):
         '代码': info['代码'],
         '名称': info['名称'],
         '评分': float(round(评分,2)),
-        '散户&游资&主力&庄家': f'[{len(散户)},{len(游资)},{len(主力)},{len(庄家)}]',
+        '散户&游资&主力&庄家': f'[{len(散户)}|{len(游资)}|{len(主力)}|{len(庄家)}]',
         '套牢量': f'{float(round(套牢量,2))}%',
         '套牢盘': f'{float(round(套牢资金/1e8,1))}亿',
-        '均价': list(均价),
-        '支撑': round(支撑,1)
+        '均价': '|'.join(map(str,均价)),
+        '底部': round(底部,1)
     }
     return r
 
@@ -331,7 +333,6 @@ def up(worker_req : mp.Queue,*args):
     codes,date,days,cap = args
 
     stocks = get_stock_spot()
-    # stocks = pd.read_csv(os.path.join(db_dir,f'0-0-行情.csv'),dtype={'代码':str})
     stocks_seleted = stocks[stocks['代码'].isin(codes)]
     stocks = stocks[(stocks['流通市值'] >= cap[0] * 1e8) & (stocks['流通市值'] <= cap[1] * 1e8)]
     stocks = pd.concat([stocks, stocks_seleted], ignore_index=True).drop_duplicates()
@@ -440,7 +441,7 @@ def data_syncing_of_stock_intraday(worker_req : mp.Queue,log : list):
 
         log[:] = []
         if now.weekday() < 5 and not df.empty: 
-            stocks = stocks[(stocks['流通市值'] >= 20 * 1e8) & (stocks['流通市值'] <= 80 * 1e8)].reset_index(drop=True)
+            stocks = stocks[(stocks['流通市值'] >= 20 * 1e8) & (stocks['流通市值'] <= 60 * 1e8)].reset_index(drop=True)
 
             for i,r in stocks.iterrows():
                 while worker_req.qsize() > os.cpu_count(): time.sleep(1)
@@ -472,7 +473,7 @@ if __name__ == '__main__':
         parser.add_argument('--name',type=str,help='股票名称')
         parser.add_argument('--code',type=str,help='股票代码',default='')
         parser.add_argument('--date',type=str,default=datetime.now().strftime('%Y%m%d'))
-        parser.add_argument('--days',type=int,default=1)
+        parser.add_argument('--days',type=int,default=7)
         parser.add_argument('--cap',nargs=2,type=float,default=[0,60],help='流通市值范围，单位：亿')
         args = parser.parse_args(cmd)
         
