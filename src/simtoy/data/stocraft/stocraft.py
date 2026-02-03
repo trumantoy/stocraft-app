@@ -330,8 +330,8 @@ def up(worker_req : mp.Queue,*args):
     worker_res = shared.Queue()
     codes,date,days,cap = args
 
-    get_stock_spot()
-    stocks = pd.read_csv(os.path.join(db_dir,f'0-0-行情.csv'),dtype={'代码':str})
+    stocks = get_stock_spot()
+    # stocks = pd.read_csv(os.path.join(db_dir,f'0-0-行情.csv'),dtype={'代码':str})
     stocks_seleted = stocks[stocks['代码'].isin(codes)]
     stocks = stocks[(stocks['流通市值'] >= cap[0] * 1e8) & (stocks['流通市值'] <= cap[1] * 1e8)]
     stocks = pd.concat([stocks, stocks_seleted], ignore_index=True).drop_duplicates()
@@ -366,43 +366,22 @@ def get_stock_spot():
 
     stocks_file_path = os.path.join(db_dir,f'0-0-行情.csv')
     # 判断文件时间是否超过一周，超过则重新获取，否则使用现有文件
-    if os.path.exists(stocks_file_path) and h15.date() - datetime.fromtimestamp(os.path.getmtime(stocks_file_path)).date() > timedelta(7):
-        stocks = ak.stock_zh_a_spot_em()
-        condition = ((stocks['代码'].str.startswith('00')) | (stocks['代码'].str.startswith('60'))) & \
-                    (~stocks['名称'].str.startswith('PT')) & \
-                    (~stocks['名称'].str.startswith('ST')) & \
-                    (~stocks['名称'].str.startswith('*ST')) & \
-                    (~stocks['最新价'].isnull()) & \
-                    (stocks['换手率'] > 0.001)
-        stocks = stocks[condition].reset_index(drop=True)
-        stocks.to_csv(stocks_file_path,index=False)
+    if os.path.exists(stocks_file_path) or h15.date() - datetime.fromtimestamp(os.path.getmtime(stocks_file_path)).date() > timedelta(7):
+        try:
+            stocks = ak.stock_zh_a_spot_em()
+            condition = ((stocks['代码'].str.startswith('00')) | (stocks['代码'].str.startswith('60'))) & \
+                        (~stocks['名称'].str.startswith('PT')) & \
+                        (~stocks['名称'].str.startswith('ST')) & \
+                        (~stocks['名称'].str.startswith('*ST')) & \
+                        (~stocks['最新价'].isnull()) & \
+                        (stocks['换手率'] > 0.001)
+            stocks = stocks[condition].reset_index(drop=True)
+            stocks.to_csv(stocks_file_path,index=False)
+        except:
+            stocks = pd.read_csv(stocks_file_path,dtype={'代码':str})
     else:
         stocks = pd.read_csv(stocks_file_path,dtype={'代码':str})
-        
-    # try:
-    #     if os.path.exists(stocks_file_path) and h15.date() == datetime.fromtimestamp(os.path.getmtime(stocks_file_path)).date():
-    #         stocks = pd.read_csv(stocks_file_path,dtype={'代码':str})
-    #     elif not os.path.exists(stocks_file_path) or h15.weekday() < 5 and h15 < datetime.now():
-    #         stocks = ak.stock_zh_a_spot_em()
-    #         condition = ((stocks['代码'].str.startswith('00')) | (stocks['代码'].str.startswith('60'))) & \
-    #                     (~stocks['名称'].str.startswith('PT')) & \
-    #                     (~stocks['名称'].str.startswith('ST')) & \
-    #                     (~stocks['名称'].str.startswith('*ST')) & \
-    #                     (~stocks['最新价'].isnull()) & \
-    #                     (stocks['换手率'] > 0.001)
-    #         stocks = stocks[condition].reset_index(drop=True)
-    #         stocks.to_csv(stocks_file_path,index=False)
-    #         spot_filepath = os.path.join(db_dir,f'0-{h15.strftime("%Y%m%d")}-行情.csv')
-    #         stocks.to_csv(spot_filepath,index=False) 
-    #     else:
-    #         raise Exception('获取股票行情失败')
-    # except:
-    #     file_paths = glob.glob(os.path.join(db_dir, '0-*-行情.csv'))
-    #     if not file_paths:
-    #         return None
-        
-    #     stocks = pd.read_csv(file_paths[-1],dtype={'代码':str})
-
+    
     return stocks
 
 def sync_stock_intraday(code,date):
@@ -461,7 +440,7 @@ def data_syncing_of_stock_intraday(worker_req : mp.Queue,log : list):
 
         log[:] = []
         if now.weekday() < 5 and not df.empty: 
-            stocks = stocks[(stocks['流通市值'] >= 0 * 1e8) & (stocks['流通市值'] <= 60 * 1e8)].reset_index(drop=True)
+            stocks = stocks[(stocks['流通市值'] >= 20 * 1e8) & (stocks['流通市值'] <= 80 * 1e8)].reset_index(drop=True)
 
             for i,r in stocks.iterrows():
                 while worker_req.qsize() > os.cpu_count(): time.sleep(1)
