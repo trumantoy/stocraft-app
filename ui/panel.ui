@@ -16,6 +16,68 @@
                 </child>
 
                 <child>
+                    <object class="GtkBox">
+                        <property name="orientation">horizontal</property>
+                        <property name="spacing">5</property>
+                        <child>
+                            <object class="GtkLabel" id="label_days">
+                                <property name="label">天数</property>
+                            </object>
+                        </child>
+
+                        <child>
+                            <object class="GtkSpinButton" id="days">
+                                <property name="digits">0</property>
+                                <property name="hexpand">True</property>
+                                <property name="adjustment">
+                                    <object class="GtkAdjustment">
+                                        <property name="lower">1</property>
+                                        <property name="upper">30</property>
+                                        <property name="step_increment">1</property>
+                                        <property name="page_increment">10</property>
+                                        <property name="page_size">0</property>
+                                        <property name="value">1</property>
+                                    </object>
+                                </property>
+                                <property name="climb_rate">1</property>
+                            </object>
+                        </child>
+                    </object>
+                </child>
+
+
+                <child>
+                    <object class="GtkBox">
+                        <property name="orientation">horizontal</property>
+                        <property name="spacing">5</property>
+                        <child>
+                            <object class="GtkLabel" id="label_score">
+                                <property name="label">分数</property>
+                            </object>
+                        </child>
+
+                        <child>
+                            <object class="GtkSpinButton" id="score">
+                                <property name="digits">2</property>
+                                <property name="hexpand">True</property>
+                                <property name="adjustment">
+                                    <object class="GtkAdjustment">
+                                        <property name="lower">0</property>
+                                        <property name="upper">100</property>
+                                        <property name="step_increment">1</property>
+                                        <property name="page_increment">10</property>
+                                        <property name="page_size">0</property>
+                                        <property name="value">1</property>
+                                    </object>
+                                </property>
+                                <property name="climb_rate">1</property>
+                                <signal name="value-changed" handler="on_score_value_changed"/>
+                            </object>
+                        </child>
+                    </object>
+                </child>
+
+                <child>
                     <object class="GtkButton" id="candidate">
                         <property name="label">候选</property>
                         <signal name="clicked" handler="on_btn_candidate_clicked"/>

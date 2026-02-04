@@ -320,10 +320,10 @@ def evaluate(code,info,dates : list):
         '代码': info['代码'],
         '名称': info['名称'],
         '评分': float(round(评分,2)),
-        '散户&游资&主力&庄家': f'[{len(散户)}|{len(游资)}|{len(主力)}|{len(庄家)}]',
+        '资金成分': f'[{len(散户)}|{len(游资)}|{len(主力)}|{len(庄家)}]',
         '套牢量': f'{float(round(套牢量,2))}%',
         '套牢盘': f'{float(round(套牢资金/1e8,1))}亿',
-        '均价': '|'.join(map(str,均价)),
+        '均价': f'[{"|".join(map(str,均价))}]',
         '底部': round(底部,1)
     }
     return r
@@ -367,7 +367,7 @@ def get_stock_spot():
 
     stocks_file_path = os.path.join(db_dir,f'0-0-行情.csv')
     # 判断文件时间是否超过一周，超过则重新获取，否则使用现有文件
-    if os.path.exists(stocks_file_path) or h15.date() - datetime.fromtimestamp(os.path.getmtime(stocks_file_path)).date() > timedelta(7):
+    if not os.path.exists(stocks_file_path) or h15.date() - datetime.fromtimestamp(os.path.getmtime(stocks_file_path)).date() > timedelta(7):
         try:
             stocks = ak.stock_zh_a_spot_em()
             condition = ((stocks['代码'].str.startswith('00')) | (stocks['代码'].str.startswith('60'))) & \
@@ -381,8 +381,7 @@ def get_stock_spot():
         except:
             stocks = pd.read_csv(stocks_file_path,dtype={'代码':str})
     else:
-        stocks = pd.read_csv(stocks_file_path,dtype={'代码':str})
-    
+        stocks = pd.read_csv(stocks_file_path,dtype={'代码':str})    
     return stocks
 
 def sync_stock_intraday(code,date):
@@ -473,7 +472,7 @@ if __name__ == '__main__':
         parser.add_argument('--name',type=str,help='股票名称')
         parser.add_argument('--code',type=str,help='股票代码',default='')
         parser.add_argument('--date',type=str,default=datetime.now().strftime('%Y%m%d'))
-        parser.add_argument('--days',type=int,default=7)
+        parser.add_argument('--days',type=int,default=1)
         parser.add_argument('--cap',nargs=2,type=float,default=[0,60],help='流通市值范围，单位：亿')
         args = parser.parse_args(cmd)
         

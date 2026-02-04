@@ -41,7 +41,7 @@ class Stocraft(gfx.WorldObject):
         f = self.steps.pop(0)
         if f(): self.steps.append(f)
 
-    def cmd_up(self, days = 7, func = None):
+    def cmd_up(self, days = 1, func = None):
         if self.up_process:
             self.up_process.terminate()
 
@@ -52,30 +52,20 @@ class Stocraft(gfx.WorldObject):
         else:
             date = (now.date() - timedelta(days=1)).strftime('%Y%m%d')
 
-        file = files("simtoy.data.stocraft") / "stocraft.py"
-        self.up_process = sp.Popen(["python", file.as_posix(), 'up','--date',f'{date}','--days',f'{days}'],stdin=sp.PIPE,stdout=sp.PIPE,encoding='utf-8')
-        print(' '.join(["python", file.as_posix(), 'up','--date',f'{date}','--days',f'{days}']))
-
         def f():
-            while True:
+            file = files("simtoy.data.stocraft") / "stocraft.py"
+            self.up_process = sp.Popen(["python", file.as_posix(), 'up','--date',f'{date}','--days',f'{days}'],stdin=sp.PIPE,stdout=sp.PIPE,encoding='utf-8')
+            print(' '.join(["python", file.as_posix(), 'up','--date',f'{date}','--days',f'{days}']),flush=True)
+
+            while self.up_process.poll() is None:
                 line = self.up_process.stdout.readline().strip()
-                if line: 
-                    print(line,flush=True)
-                    if line == '-': 
-                        self.up_process.stdin.write('exit\n')
-                        self.up_process.stdin.flush()
-
-                    if self.stocks is None:
-                        # 第一行是列名，用它创建DataFrame，然后填充N行数据
-                        columns = line.split(',')
-                        self.stocks = pd.DataFrame(columns=columns,data=np.full((10000,len(columns)),''),index=range(10000),dtype=str)
-                    else:
-                        # 后续行是数据，用它添加到DataFrame，第0列是索引，从1开始
-                        row = line.split(',')
-                        self.stocks.loc[len(self.stocks)] = row[1:]
-                        func(self.stocks,row)
-
-                if self.up_process.poll() is not None: break
+                if not line: continue 
+                print(line)
+                if line != '-': 
+                    func(line)
+                else:
+                    self.up_process.stdin.write('exit\n')
+                    self.up_process.stdin.flush()
 
         # self.steps.append(f)
         threading.Thread(target=f,daemon=True).start()

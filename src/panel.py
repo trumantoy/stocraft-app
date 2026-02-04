@@ -36,6 +36,7 @@ class Panel (Gtk.ScrolledWindow):
         self.lsv_spots.set_model(self.selection)
 
         self.connect('unmap',self.on_unmap)
+        self.rows = []
 
     def on_unmap(self,widget):
         self.stocraft.up_process.terminate()
@@ -44,18 +45,26 @@ class Panel (Gtk.ScrolledWindow):
         self.stocraft : Stocraft = tool
 
     @Gtk.Template.Callback()
+    def on_score_value_changed(self,sender):
+        self.model.remove_all()
+
+
+    @Gtk.Template.Callback()
     def on_btn_candidate_clicked(self,sender):
-        self.stocraft.cmd_up(self.spin_days.get_value(),func=self.update_stocks)
+        self.stocraft.cmd_up(int(self.spin_days.get_value()),func=self.update_stocks)
 
     def setup_listitem(self, factory, lsi):
         lsi.set_child(Gtk.Label())
 
     def bind_listitem(self, factory, lsi):
         label = lsi.get_child()
-        code = lsi.get_item().get_string()
-        df = self.df[self.df['代码'] == code]
-        label.set_text(df.iloc[0].to_string())
+        label.set_halign(Gtk.Align.START)
+        row = lsi.get_item().get_string()
+        label.set_text(row)
 
-    def update_stocks(self,df,row):
-        self.df = df
-        if float(row[3]) > self.spin_score.get_value(): GLib.idle_add(self.model.append,row[3])
+    def update_stocks(self,line):
+        row = line.split(',')
+        if self.rows: 
+            if float(row[4]) > self.spin_score.get_value(): GLib.idle_add(self.model.append,line)
+
+        self.rows.append(row)
