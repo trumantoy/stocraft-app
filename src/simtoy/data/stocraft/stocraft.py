@@ -30,8 +30,13 @@ def feature(交易,已有特征=None,interval_seconds = 10):
 
     # 把交易的价格全部换成对数，底数为1.01
     交易['成交点'] = round(np.log(交易['成交价']) / np.log(1.01))
-
+    交易['_时间'] = pd.to_datetime(交易['时间'])
+    
     rows = 已有特征.values.tolist()
+    if rows: 
+        _,起时,_,_,_,_,_,_,_ = rows[-1]
+        交易 = 交易[交易['_时间'] >= datetime.strptime(起时, "%Y%m%d %H:%M:%S")]
+
     i = 0
     for _,r in 交易.iterrows():
         时间,成交价,手数,买卖盘性质,成交点 = r['时间'],r['成交价'],r['手数'],r['买卖盘性质'],r['成交点']
