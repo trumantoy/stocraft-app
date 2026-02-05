@@ -35,11 +35,7 @@ class Panel (Gtk.ScrolledWindow):
 
         self.lsv_spots.set_model(self.selection)
 
-        self.connect('unmap',self.on_unmap)
         self.rows = []
-
-    def on_unmap(self,widget):
-        self.stocraft.up_process.terminate()
 
     def bind_owner(self, tool):
         self.stocraft : Stocraft = tool

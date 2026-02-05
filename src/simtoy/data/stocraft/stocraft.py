@@ -285,6 +285,12 @@ def evaluate(code,info,dates : list):
             庄家特征 = 买入特征[买入特征['总价'] > 2e8]
             庄家 += 庄家特征.values.tolist()
 
+            卖出特征 = 特征[(特征['起点'] - 特征['终点'] > 1)]
+            主力特征 = 卖出特征[买入特征['总价'] > 1e8]
+            主力 += 主力特征.values.tolist()
+            庄家特征 = 卖出特征[买入特征['总价'] > 2e8]
+            庄家 += 庄家特征.values.tolist()
+
             # 记录支撑价
             均价.update(庄家特征['均价'].values.tolist())
             均价.update(主力特征['均价'].values.tolist())

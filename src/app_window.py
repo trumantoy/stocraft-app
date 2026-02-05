@@ -86,6 +86,10 @@ class AppWindow (Gtk.ApplicationWindow):
         self.prev_width = width
         Gtk.ApplicationWindow.do_size_allocate(self,width,height,baseline)
 
+        self.connect('unmap',self.on_unmap)
+    def on_unmap(self,widget):
+        del self.tool
+        
     def draw(self,area, cr : cairo.Context, area_w, area_h):        
         width,height = self.canvas.get_physical_size()
 
