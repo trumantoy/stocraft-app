@@ -41,7 +41,8 @@ class Panel (Gtk.ScrolledWindow):
 
     @Gtk.Template.Callback()
     def on_code_activate(self,sender):
-        self.stocraft.cmd_measure(self.entry_code.get_text(),int(self.spin_days.get_value()),func=self.measure)
+        code = self.entry_code.get_text().strip()
+        if code: self.stocraft.cmd_measure(self.entry_code.get_text(),int(self.spin_days.get_value()),func=self.measure)
 
     @Gtk.Template.Callback()
     def on_score_value_changed(self,sender):
@@ -71,9 +72,6 @@ class Panel (Gtk.ScrolledWindow):
 
         self.rows.append(row)
 
-    def measure(self,line):
-        row = line.split(',')
-        if self.features: 
-            # GLib.idle_add(self.model.append,line)
-            pass
-        self.features.append(row)
+    def measure(self,d,f):
+        # self.features.append(row)
+        pass

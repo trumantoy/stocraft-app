@@ -22,8 +22,6 @@ import threading
 import multiprocessing as mp
 from multiprocessing.managers import ValueProxy,ListProxy,DictProxy
 
-import glob
-
 db_dir = 'db'
 
 def feature(交易,已有特征=None,interval_seconds = 10):
@@ -53,8 +51,8 @@ def feature(交易,已有特征=None,interval_seconds = 10):
         else:
             _,终时,_,终价,_,均价,性质,_,终点 = 当前
 
-            time1 = datetime.strptime(终时, "%H:%M:%S")
-            time2 = datetime.strptime(时间, "%H:%M:%S")
+            time1 = datetime.strptime(终时, "%Y%m%d %H:%M:%S")
+            time2 = datetime.strptime(时间, "%Y%m%d %H:%M:%S")
             time_diff = time2 - time1
             if (买卖盘性质 != 性质 and 成交点 == 终点):
                 买卖盘性质 = 性质
@@ -66,8 +64,8 @@ def feature(交易,已有特征=None,interval_seconds = 10):
                 if len(rows):
                     近起时,近终时,近起价,近终价,近总价,近均价,近均点,近起点,近终点 = rows[-1]
 
-                    time1 = datetime.strptime(近终时, "%H:%M:%S")
-                    time2 = datetime.strptime(时间, "%H:%M:%S")
+                    time1 = datetime.strptime(近终时, "%Y%m%d %H:%M:%S")
+                    time2 = datetime.strptime(时间, "%Y%m%d %H:%M:%S")
                     time_diff = time2 - time1
 
                     if time_diff.total_seconds() < interval_seconds or 近终点 == 成交点:
@@ -263,10 +261,9 @@ def evaluate(code,info,dates : list):
     天数 = []
     try:
         for i,date in enumerate(dates):
-            filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
-            if not os.path.exists(filepath): i-=1; continue
+            交易 = get_stock_intraday(code,date)
+            if 交易 is None: i-=1; continue
             天数.append(date)
-            交易 = pd.read_csv(filepath,dtype={'代码':str})
             特征 = feature(交易)
 
             if not 最新价格:
@@ -406,19 +403,23 @@ def get_stock_info(code):
         else: i = 0
     return df
 
-def get_stock_intraday(code,date = None):
-    now = datetime.now()
+def get_stock_intraday(code,date = datetime.now().strftime('%Y%m%d')):
     filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
     if os.path.exists(filepath):
         df = pd.read_csv(filepath)
 
-    h9 = now.replace(hour=9, minute=15, second=0)
+    h9 = datetime.now().replace(hour=9, minute=15, second=0)
     if date == now.strftime('%Y%m%d') and h9 < now:
         i = 1
         while i:
             try: df = ak.stock_intraday_em(code)
             except: i += 1; time.sleep(0.1)
             else: i = 0
+
+    if df is not None: 
+        df['时间'] = date + ' ' + df['时间']
+        df['成交点'] = round(np.log(df['成交价']) / np.log(1.01))
+
     return df
 
 def worker(id,req : mp.Queue):
@@ -525,18 +526,18 @@ if __name__ == '__main__':
             for date in dates:
                 交易 = get_stock_intraday(args.code,date)
                 
-                if not 交易: continue
+                if 交易 is None: continue
                 # 流量 = measure(交易)
 
                 if 已有交易 is None:
                     新增交易 = 交易
-                    # print(','.join(交易.columns))
+                    print(','.join(交易.columns))
                 else:
                     index_diff = 交易.index.difference(已有交易.index)
                     新增交易 = 交易.loc[index_diff]
 
-                # if not 新增交易.empty: print(新增交易.to_csv(header=False))
-                # print('-')
+                if not 新增交易.empty: print(新增交易.to_csv(header=False))
+                print('f')
                 特征 = feature(交易,已有特征)
 
                 if 已有特征 is None:
@@ -550,7 +551,7 @@ if __name__ == '__main__':
                 
                 已有交易 = 交易
                 已有特征 = 特征
-
+                print('d')
                 if datetime.now() < h15: dates.append(date)
         elif args.mode == 'test':
             pass
