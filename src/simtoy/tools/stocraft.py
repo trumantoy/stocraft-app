@@ -138,16 +138,17 @@ class Stocraft(gfx.WorldObject):
         h11 = datetime.strptime(f'{now.date()} 11:30:00','%Y-%m-%d %H:%M:%S')
         h13 = datetime.strptime(f'{now.date()} 13:00:00','%Y-%m-%d %H:%M:%S')
         h15 = datetime.strptime(f'{now.date()} 15:00:00','%Y-%m-%d %H:%M:%S')
-        t = 240 - ((h15 - datetime.strptime(时间,'%Y%m%d %H:%M:%S')).total_seconds() - (h13 - h11).total_seconds()) / 60
+
+        h = datetime.strptime(时间,'%Y%m%d %H:%M:%S')
+        t = (h - h9).total_seconds() / 60
+        if h > h13: t = (t - (h13 - h11).total_seconds() / 60)
         p = float(成交点)
 
         if self.line_blue:
-            print([t,p])
             self.line_blue.geometry = gfx.Geometry(positions=np.vstack((self.line_blue.geometry.positions.data,[[t,p,0]]),dtype=np.float32))
-            self.line_blue.geometry.update()
         else:
             geom = gfx.Geometry(positions=[[t,p,0]])
-            mater = gfx.LineMaterial(thickness=2,color="blue")
+            mater = gfx.LineMaterial(thickness=1,color="blue")
             self.line_blue = gfx.Line(geom,mater)
             self.line_blue.local.scale_x = self.axis_x.local.scale_x
             self.line_blue.local.scale_y = self.axis_y.local.scale_y
@@ -163,12 +164,14 @@ class Stocraft(gfx.WorldObject):
         h11 = datetime.strptime(f'{now.date()} 11:30:00','%Y-%m-%d %H:%M:%S')
         h13 = datetime.strptime(f'{now.date()} 13:00:00','%Y-%m-%d %H:%M:%S')
         h15 = datetime.strptime(f'{now.date()} 15:00:00','%Y-%m-%d %H:%M:%S')
-        t = 240 - ((h15 - datetime.strptime(起时,'%Y%m%d %H:%M:%S')).total_seconds() - (h13 - h11).total_seconds()) / 60
+        h = datetime.strptime(起时,'%Y%m%d %H:%M:%S')
+        t = (h - h9).total_seconds() / 60
+        if h > h13: t = (t - (h13 - h11).total_seconds() / 60)
         p0,p1 = float(起点),float(终点)
         p = float(均点)
 
         geom = gfx.Geometry(positions=[[t,p0,0],[t,p1,0]])
-        mater = gfx.LineMaterial(thickness=2,color="red" if p0 < p1 else "green")
+        mater = gfx.LineMaterial(thickness=4,color="red" if p0 < p1 else "green")
         line = gfx.Line(geom,mater)
         line.local.scale_x = self.axis_x.local.scale_x
         line.local.scale_y = self.axis_y.local.scale_y
