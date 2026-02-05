@@ -278,19 +278,13 @@ def evaluate(code,info,dates : list):
                 最新日期 = date
             
             # 统计特征中，大单的区间，500万以下，500~1000万，1000~2000万，2000万以上的数量，分别用散户，游资，主力，庄家来表示。
-            买入特征 = 特征[(特征['终点'] - 特征['起点'] > 1)]
+            特征 = 特征[(特征['终点'] - 特征['起点']).abs() > 1]
 
-            散户 += 买入特征[买入特征['总价'] <= 5e7].values.tolist()
-            游资 += 买入特征[(买入特征['总价'] > 5e7) & (买入特征['总价'] <= 1e8)].values.tolist()
-            主力特征 = 买入特征[买入特征['总价'] > 1e8]
+            散户 += 特征[特征['总价'] <= 5e7].values.tolist()
+            游资 += 特征[(特征['总价'] > 5e7) & (特征['总价'] <= 1e8)].values.tolist()
+            主力特征 = 特征[特征['总价'] > 1e8]
             主力 += 主力特征.values.tolist()
-            庄家特征 = 买入特征[买入特征['总价'] > 2e8]
-            庄家 += 庄家特征.values.tolist()
-
-            卖出特征 = 特征[(特征['起点'] - 特征['终点'] > 1)]
-            主力特征 = 卖出特征[买入特征['总价'] > 1e8]
-            主力 += 主力特征.values.tolist()
-            庄家特征 = 卖出特征[买入特征['总价'] > 2e8]
+            庄家特征 = 特征[特征['总价'] > 2e8]
             庄家 += 庄家特征.values.tolist()
 
             # 记录支撑价
@@ -360,7 +354,6 @@ def up(worker_req : mp.Queue,*args):
         if not res: continue 
         if i == 0: print(' ',','.join(res.keys()),flush=True)
         print(f'{i},{','.join(str(v) for v in res.values())}',flush=True)
-        # rows.append(res)
     return pd.DataFrame(rows)
     
 def play(worker_req : mp.Queue,codes,date,days):
@@ -394,12 +387,6 @@ def get_stock_spot():
         stocks = pd.read_csv(stocks_file_path,dtype={'代码':str})    
     return stocks
 
-def sync_stock_intraday(code,date):
-    filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
-    if not os.path.exists(filepath) or 0 == os.path.getsize(filepath):
-        df = get_stock_intraday(code)
-        df.to_csv(filepath,index=False)
-
 def get_stock_info(code):
     i = 1
     while i:
@@ -409,17 +396,21 @@ def get_stock_info(code):
     return df
 
 def get_stock_intraday(code,date = datetime.now().strftime('%Y%m%d')):
+    df = None
+    now = datetime.now()
+    h9 = now.replace(hour=9, minute=15, second=0)
+    h15 = now.replace(hour=15, minute=0, second=0)
     filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
-    if os.path.exists(filepath):
+    if os.path.exists(filepath) and 0 < os.path.getsize(filepath):
         df = pd.read_csv(filepath)
-
-    h9 = datetime.now().replace(hour=9, minute=15, second=0)
-    if date == now.strftime('%Y%m%d') and h9 < now:
+    elif h9 < now and date == now.strftime('%Y%m%d'):
         i = 1
         while i:
             try: df = ak.stock_intraday_em(code)
             except: i += 1; time.sleep(0.1)
             else: i = 0
+        if h15 < now:
+            df.to_csv(filepath,index=False)
 
     if df is not None: 
         df['时间'] = date + ' ' + df['时间']
@@ -465,7 +456,7 @@ def data_syncing_of_stock_intraday(worker_req : mp.Queue,log : list):
 
             for i,r in stocks.iterrows():
                 while worker_req.qsize() > os.cpu_count(): time.sleep(1)
-                worker_req.put((None,'sync_stock_intraday',r['代码'],date))
+                worker_req.put((None,'get_stock_intraday',r['代码']))
                 log.append(f'{int(i)+1}/{stocks.shape[0]} {r["代码"]}-{r["名称"]}')
 
         while datetime.now() < h24:
@@ -494,7 +485,7 @@ if __name__ == '__main__':
         parser.add_argument('--code',type=str,help='股票代码',default='')
         parser.add_argument('--date',type=str,default=datetime.now().strftime('%Y%m%d'))
         parser.add_argument('--days',type=int,default=1)
-        parser.add_argument('--cap',nargs=2,type=float,default=[0,60],help='流通市值范围，单位：亿')
+        parser.add_argument('--cap',nargs=2,type=float,default=[20,60],help='流通市值范围，单位：亿')
         args = parser.parse_args(cmd)
         
         if args.mode == 'sync':

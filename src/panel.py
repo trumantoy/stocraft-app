@@ -35,6 +35,7 @@ class Panel (Gtk.ScrolledWindow):
         self.lsv_spots.set_model(self.selection)
         self.rows = []
         self.features = []
+        self.lsv_spots.connect('activate', self.on_spot_activated)
 
     def bind_owner(self, tool):
         self.stocraft : Stocraft = tool
@@ -65,10 +66,17 @@ class Panel (Gtk.ScrolledWindow):
         row = lsi.get_item().get_string()
         label.set_text(row)
 
+    def on_spot_activated(self, lsv, index):
+        item = self.selection.get_selected_item()
+        if item:
+            row = item.get_string().split(',')
+            self.entry_code.set_text(row[3])
+            self.entry_code.emit('activate')
+
     def update_stocks(self,line):
         row = line.split(',')
         if self.rows: 
-            if float(row[4]) > self.spin_score.get_value(): GLib.idle_add(self.model.append,line)
+            if float(row[5]) > self.spin_score.get_value(): GLib.idle_add(self.model.append,line)
 
         self.rows.append(row)
 

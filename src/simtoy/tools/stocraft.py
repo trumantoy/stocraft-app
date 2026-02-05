@@ -12,7 +12,14 @@ class Stocraft(gfx.WorldObject):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.steps = list()
-     
+        self.process_measure = self.process_up = None
+        self.line_blue = None
+        self.make_box(0)
+
+    def __del__(self):
+        if self.up_process: self.up_process.terminate()
+
+    def make_box(self,day):
         price_start = m.log(1,1.01)
         price_end = m.log(100,1.01)
         amount_start = 0
@@ -28,15 +35,18 @@ class Stocraft(gfx.WorldObject):
         # 创建Ruler 作为 x，y，z轴的可视化表示
         self.axis_x = gfx.Ruler(start_pos=(time_start,0,0), end_pos=(time_end,0,0))
         self.axis_x.local.scale_x = 1 / (time_end-time_start)
+        self.axis_x.local.x = day
         self.add(self.axis_x)
 
         self.axis_y = gfx.Ruler(start_pos=(0,0,0), end_pos=(0,price_end,0),tick_format=lambda v, mi, ma: str(round(m.pow(1.01,v),2)))
         self.axis_y.local.scale_y = 1 / (price_end-price_start)
+        self.axis_y.local.x = day
         self.add(self.axis_y)
 
         self.axis_z = gfx.Ruler(start_pos=(0,0,amount_start), end_pos=(0,0,amount_end))
-        self.axis_z.local.x = self.axis_z.local.y = 1
-        self.axis_z.local.scale_z = 1 / (amount_end-amount_start) * 0.5
+        self.axis_z.local.x = 1 + day
+        self.axis_z.local.y = 1
+        self.axis_z.local.scale_z = 1 / (amount_end-amount_start) 
         self.add(self.axis_z)
 
         grid_xy = gfx.Grid(
@@ -45,21 +55,16 @@ class Stocraft(gfx.WorldObject):
                 major_step=(1,10 / (price_end-price_start)),
                 minor_step=(1 / (time_end-time_start),2 / (price_end-price_start)),
                 thickness_space="world",
-                axis_thickness=0.005,
-                major_thickness=0.002,
-                minor_thickness=0.001,
+                axis_thickness=0.0005,
+                major_thickness=0.0002,
+                minor_thickness=0.0001,
                 infinite=False
             ),
             orientation="xy",
         )
+        grid_xy.local.x = day
         grid_xy.local.z = -0.001
         self.add(grid_xy)
-
-        self.process_measure = self.process_up = None
-        self.line_blue = None
-
-    def __del__(self):
-        if self.up_process: self.up_process.terminate()
 
     def step(self, dt: float,camera: gfx.Camera, canvas : RenderCanvas):
         for ob in self.children:
@@ -97,10 +102,12 @@ class Stocraft(gfx.WorldObject):
                     self.process_up.stdin.write('exit\n')
                     self.process_up.stdin.flush()
 
-        # self.steps.append(f)
         threading.Thread(target=f,daemon=True).start()
 
     def cmd_measure(self,code,days=1,func=None):
+        for obj in self.children: self.remove(obj)
+        for i in range(days): self.make_box(i)
+
         if self.process_measure:
             self.process_measure.terminate()
 
@@ -134,10 +141,11 @@ class Stocraft(gfx.WorldObject):
         编号,时间,价格,手数,性质,成交点 = *row,
         
         now = datetime.now()
-        h9 = datetime.strptime(f'{now.date()} 09:30:00','%Y-%m-%d %H:%M:%S')
-        h11 = datetime.strptime(f'{now.date()} 11:30:00','%Y-%m-%d %H:%M:%S')
-        h13 = datetime.strptime(f'{now.date()} 13:00:00','%Y-%m-%d %H:%M:%S')
-        h15 = datetime.strptime(f'{now.date()} 15:00:00','%Y-%m-%d %H:%M:%S')
+        date = 时间.split(' ')[0]
+        h9 = datetime.strptime(f'{date} 09:30:00','%Y-%m-%d %H:%M:%S')
+        h11 = datetime.strptime(f'{date} 11:30:00','%Y-%m-%d %H:%M:%S')
+        h13 = datetime.strptime(f'{date} 13:00:00','%Y-%m-%d %H:%M:%S')
+        h15 = datetime.strptime(f'{date} 15:00:00','%Y-%m-%d %H:%M:%S')
 
         h = datetime.strptime(时间,'%Y%m%d %H:%M:%S')
         t = (h - h9).total_seconds() / 60

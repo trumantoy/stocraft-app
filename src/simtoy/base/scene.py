@@ -16,9 +16,9 @@ class Editor(gfx.Scene):
 
         ortho_camera = gfx.OrthographicCamera()
         persp_camera = gfx.PerspectiveCamera()
-        persp_camera.local.position = ortho_camera.local.position = [0,-0.8,0.2]
-        ortho_camera.show_pos([0,0,0],up=[0,0,1])
-        persp_camera.show_pos([0,0,0],up=[0,0,1])
+        persp_camera.local.position = ortho_camera.local.position = [0.5,0.5,2.0]
+        ortho_camera.show_pos([0.5,0.5,0],up=[0,0,1])
+        persp_camera.show_pos([0.5,0.5,0],up=[0,0,1])
         self.persp_camera = persp_camera
         self.ortho_camera = ortho_camera
         
