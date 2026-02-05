@@ -406,12 +406,19 @@ def get_stock_info(code):
         else: i = 0
     return df
 
-def get_stock_intraday(code):
-    i = 1
-    while i:
-        try: df = ak.stock_intraday_em(code)
-        except: i += 1
-        else: i = 0
+def get_stock_intraday(code,date = None):
+    now = datetime.now()
+    filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
+    if os.path.exists(filepath):
+        df = pd.read_csv(filepath)
+
+    h9 = now.replace(hour=9, minute=15, second=0)
+    if date == now.strftime('%Y%m%d') and h9 < now:
+        i = 1
+        while i:
+            try: df = ak.stock_intraday_em(code)
+            except: i += 1; time.sleep(0.1)
+            else: i = 0
     return df
 
 def worker(id,req : mp.Queue):
@@ -443,7 +450,7 @@ def data_syncing_of_stock_intraday(worker_req : mp.Queue,log : list):
         end = now.replace(hour=9, minute=40, second=0).strftime('%Y-%m-%d %H:%M:%S')
         while True:
             try:df = ak.stock_zh_a_hist_min_em(symbol="000001", start_date=start, end_date=end, period="5", adjust="")
-            except:continue
+            except: time.sleep(0.1); continue
             else:break
 
         log[:] = []
@@ -498,44 +505,53 @@ if __name__ == '__main__':
             codes = args.code.split(',')
             up(worker_req,codes,args.date,args.days,args.cap)
         elif args.mode == 'evaluate':
-            stocks = pd.read_csv(os.path.join(db_dir,f'0-{args.date}-行情.csv'),dtype={'代码':str})
-            stocks_seleted = stocks[stocks['代码'] == args.code]
-            info = stocks_seleted.iloc[0]
-            print(evaluate(args.code,info,[args.date]))
+            stocks = get_stock_spot()
+            stocks_seleted = stocks[stocks['代码'].isin(args.code.split(','))]
+            
+            for info in stocks_seleted.values:
+                print(evaluate(info['代码'],info,[args.date]))
         elif args.mode == 'measure':
             已有交易 = None
             已有特征 = None
             
-            h9 = datetime.now().replace(hour=9, minute=15, second=0)
-            h15 = datetime.now().replace(hour=15, minute=0, second=0)
+            now = datetime.now()
+            end = datetime.strptime(args.date,'%Y%m%d')
+            start = end - timedelta(args.days)
+            dates = [d.strftime('%Y%m%d') for d in pd.date_range(start,end,freq='1D')][1:]
             
-            if datetime.now() < h9: continue
-
-            交易 = get_stock_intraday(args.code)
-            # 流量 = measure(交易)
-
-            if 已有交易 is None:
-                新增交易 = 交易
-                print(','.join(交易.columns))
-            else:
-                index_diff = 交易.index.difference(已有交易.index)
-                新增交易 = 交易.loc[index_diff]
-
-            if not 新增交易.empty: print(新增交易.to_csv(header=False))
-            print('-')
-            特征 = feature(新增交易,已有特征)
-
-            if 已有特征 is None:
-                新增特征 = 特征
-                print(','.join(特征.columns))
-            else:
-                index_diff = 特征[特征.index.difference(已有特征.index)]
-                新增特征 = 特征.loc[index_diff]
+            h9 = now.replace(hour=9, minute=15, second=0)
+            h15 = now.replace(hour=15, minute=0, second=0)
             
-            if not 新增特征.empty: print(新增特征.to_csv(header=False))
-            
-            已有交易 = 交易
-            已有特征 = 特征
+            for date in dates:
+                交易 = get_stock_intraday(args.code,date)
+                
+                if not 交易: continue
+                # 流量 = measure(交易)
+
+                if 已有交易 is None:
+                    新增交易 = 交易
+                    # print(','.join(交易.columns))
+                else:
+                    index_diff = 交易.index.difference(已有交易.index)
+                    新增交易 = 交易.loc[index_diff]
+
+                # if not 新增交易.empty: print(新增交易.to_csv(header=False))
+                # print('-')
+                特征 = feature(交易,已有特征)
+
+                if 已有特征 is None:
+                    新增特征 = 特征
+                    print(','.join(特征.columns))
+                else:
+                    index_diff = 特征[特征.index.difference(已有特征.index)]
+                    新增特征 = 特征.loc[index_diff]
+                
+                if not 新增特征.empty: print(新增特征.to_csv(header=False))
+                
+                已有交易 = 交易
+                已有特征 = 特征
+
+                if datetime.now() < h15: dates.append(date)
         elif args.mode == 'test':
             pass
         elif args.mode == 'exit':

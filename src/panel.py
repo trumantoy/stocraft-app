@@ -32,18 +32,24 @@ class Panel (Gtk.ScrolledWindow):
         factory.connect("setup", self.setup_listitem)
         factory.connect("bind", self.bind_listitem)
         self.lsv_spots.set_factory(factory)
-
         self.lsv_spots.set_model(self.selection)
-
         self.rows = []
+        self.features = []
 
     def bind_owner(self, tool):
         self.stocraft : Stocraft = tool
 
     @Gtk.Template.Callback()
+    def on_code_activate(self,sender):
+        self.stocraft.cmd_measure(self.entry_code.get_text(),int(self.spin_days.get_value()),func=self.measure)
+
+    @Gtk.Template.Callback()
     def on_score_value_changed(self,sender):
         self.model.remove_all()
-
+        df = pd.DataFrame(self.rows[1:],columns=self.rows[0])
+        df = df[df['score'] >= self.spin_score.get_value()]
+        for row in df.values:
+            GLib.idle_add(self.model.append,','.join(row))
 
     @Gtk.Template.Callback()
     def on_btn_candidate_clicked(self,sender):
@@ -64,3 +70,10 @@ class Panel (Gtk.ScrolledWindow):
             if float(row[4]) > self.spin_score.get_value(): GLib.idle_add(self.model.append,line)
 
         self.rows.append(row)
+
+    def measure(self,line):
+        row = line.split(',')
+        if self.features: 
+            # GLib.idle_add(self.model.append,line)
+            pass
+        self.features.append(row)

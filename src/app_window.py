@@ -76,6 +76,7 @@ class AppWindow (Gtk.ApplicationWindow):
         # self.propbar.connect('item-removed', self.item_removed)
         # # self.panel.add_device(self.tool)
         # self.panel.connect('preview', self.preview)
+        self.connect('unmap',self.on_unmap)
 
     def do_size_allocate(self, width: int, height: int, baseline: int):
         if hasattr(self,'prev_width'): 
@@ -86,11 +87,10 @@ class AppWindow (Gtk.ApplicationWindow):
         self.prev_width = width
         Gtk.ApplicationWindow.do_size_allocate(self,width,height,baseline)
 
-        self.connect('unmap',self.on_unmap)
     def on_unmap(self,widget):
         del self.tool
-        
-    def draw(self,area, cr : cairo.Context, area_w, area_h):        
+       
+    def draw(self,area, cr : cairo.Context, area_w, area_h):
         width,height = self.canvas.get_physical_size()
 
         if width != area_w or height != area_h: 

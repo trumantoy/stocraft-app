@@ -27,8 +27,24 @@ class Stocraft(gfx.WorldObject):
         axis_z = gfx.Ruler(start_pos=(0,0,0), end_pos=(0,0,1))
         self.add(axis_z)
 
-        self.up_process = None
-        self.stocks = None
+        grid_xy = gfx.Grid(
+            gfx.box_geometry(),
+            gfx.GridMaterial(
+                major_step=1,
+                minor_step=0.1,
+                thickness_space="world",
+                axis_thickness=0.005,
+                major_thickness=0.005,
+                minor_thickness=0.001,
+            ),
+            orientation="xy",
+        )
+        self.add(grid_xy)
+
+        self.process_measure = self.up_process = None
+
+    def __del__(self):
+        if self.up_process: self.up_process.terminate()
 
     def step(self, dt: float,camera: gfx.Camera, canvas : RenderCanvas):
         for ob in self.children:
@@ -42,8 +58,8 @@ class Stocraft(gfx.WorldObject):
         if f(): self.steps.append(f)
 
     def cmd_up(self, days = 1, func = None):
-        if self.up_process:
-            self.up_process.terminate()
+        if self.process_up:
+            self.process_up.terminate()
 
         # 得到当天的时间，如果超过15点，取当天，否则取前一天
         now = datetime.now()
@@ -54,7 +70,7 @@ class Stocraft(gfx.WorldObject):
 
         def f():
             file = files("simtoy.data.stocraft") / "stocraft.py"
-            self.up_process = sp.Popen(["python", file.as_posix(), 'up','--date',f'{date}','--days',f'{days}'],stdin=sp.PIPE,stdout=sp.PIPE,encoding='utf-8')
+            self.process_up = sp.Popen(["python", file.as_posix(), 'up','--date',f'{date}','--days',f'{days}'],stdin=sp.PIPE,stdout=sp.PIPE,encoding='utf-8')
             print(' '.join(["python", file.as_posix(), 'up','--date',f'{date}','--days',f'{days}']),flush=True)
 
             while self.up_process.poll() is None:
@@ -70,28 +86,24 @@ class Stocraft(gfx.WorldObject):
         # self.steps.append(f)
         threading.Thread(target=f,daemon=True).start()
 
-    def cmd_measure(self,code):
-        if self.process:
-            self.process.terminate()
+    def cmd_measure(self,code,days=1,func=None):
+        if self.process_measure:
+            self.process_measure.terminate()
 
-        df = pd.DataFrame()
+        def f():
+            file = files("simtoy.data.stocraft") / "stocraft.py"
+            cmd = ["python", file.as_posix(), 'measure','--code', code]
+            self.process_measure = sp.Popen(cmd,stdin=sp.PIPE,stdout=sp.PIPE,encoding='utf-8')
+            print(' '.join(cmd),flush=True)
+    
+            while self.process_measure.poll() is None:
+                line = self.process_measure.stdout.readline().strip()
+                if not line: continue 
+                print(line)
+                if line != '-': 
+                    func(line)
+                else:
+                    self.process_measure.stdin.write('exit\n')
+                    self.process_measure.stdin.flush()
 
-        file = files("simtoy.data.stocraft") / "stocraft.py"
-        p = sp.Popen(["python", file.as_posix(), 'measure','--code', code],stdin=sp.PIPE,stdout=sp.PIPE,encoding='utf-8')
-
-        line = p.stdout.readline().strip()
-        df.index = [i for i in range(10000)]
-        df[line.split(',')] = np.full((10000,4),np.nan)
-        df[df.columns[0]] = df[df.columns[0]].astype(str)
-        df[df.columns[3]] = df[df.columns[3]].astype(str)
-
-        end = 0
-        while line != '-':
-            line = p.stdout.readline().strip()
-            if not line or line == '-': continue
-            row = line.split(',')
-            id,time,price,count,kind = int(row[0]),row[1],float(row[2]),float(row[3]),row[4]
-            df.loc[id] = [time,price,count,kind]
-            end = id
-            
-        print(df.loc[:end])
+        threading.Thread(target=f,daemon=True).start()    
