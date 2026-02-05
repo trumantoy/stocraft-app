@@ -29,9 +29,9 @@ class Editor(gfx.Scene):
         self.skybox = SkyBox()
         self.add(self.skybox)
 
-        self.ground = Ground()
-        self.ground.local.z -= 0.001
-        self.add(self.ground)
+        # self.ground = Ground()
+        # self.ground.local.z -= 0.001
+        # self.add(self.ground)
 
         ambient = gfx.AmbientLight()
         self.add(ambient)
