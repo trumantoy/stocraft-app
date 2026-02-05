@@ -260,11 +260,12 @@ def evaluate(code,info,dates : list):
     最新日期 = None
     最新价格 = None
     最新点 = None
+    天数 = []
     try:
         for i,date in enumerate(dates):
             filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
             if not os.path.exists(filepath): i-=1; continue
-
+            天数.append(date)
             交易 = pd.read_csv(filepath,dtype={'代码':str})
             特征 = feature(交易)
 
@@ -317,6 +318,7 @@ def evaluate(code,info,dates : list):
 
     r = {
         '日期': 最新日期,
+        '天数': len(天数),
         '代码': info['代码'],
         '名称': info['名称'],
         '评分': float(round(评分,2)),
