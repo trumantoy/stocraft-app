@@ -115,38 +115,43 @@ class Stocraft(gfx.WorldObject):
 
         def f():
             file = files("simtoy.data.stocraft") / "stocraft.py"
-            cmd = ["python", file.as_posix(), 'measure','--code', code]
+            cmd = ["python", file.as_posix(), 'measure','--code', code,'--days', f'{days}']
             self.process_measure = sp.Popen(cmd,stdin=sp.PIPE,stdout=sp.PIPE,encoding='utf-8')
             print(' '.join(cmd),flush=True)
 
             deals = []
             feats = []
             swt = 'd'
+            dates = set()
             while self.process_measure.poll() is None:
                 line = self.process_measure.stdout.readline().strip()
                 if not line: continue 
-                print(line)
+                # print(line)
                 if line in ['f','d']: swt = line
                 elif line not in ['-','>']: 
                     if swt == 'd': 
-                        if deals: self.add_deal(line.split(','))
+                        if deals:
+                            a = len(dates) 
+                            dates.add(line[:8])
+                            if a != len(dates): self.line_blue = None
+                            self.add_deal(line.split(','),len(dates) - 1)
                         deals.append(line)
                     if swt == 'f':
                         if feats:
                             pop = False 
-                            if line.split(',')[0] == feats[-1].split(',')[0]: 
+                            if line[:17] == feats[-1][:17]: 
                                 feats.pop()
                                 pop = True
 
-                            self.add_feature(line.split(','),pop)
+                            self.add_feature(line.split(','),pop,len(dates) - 1)
                         feats.append(line)
                 else:
                     self.process_measure.stdin.write('exit\n')
 
         threading.Thread(target=f,daemon=True).start()
 
-    def add_deal(self,row):
-        编号,时间,价格,手数,性质,成交点 = *row,
+    def add_deal(self,row,day):
+        时间,价格,手数,性质,成交点 = *row,
         
         now = datetime.now()
         date = 时间.split(' ')[0]
@@ -158,6 +163,7 @@ class Stocraft(gfx.WorldObject):
         h = datetime.strptime(时间,'%Y%m%d %H:%M:%S')
         t = (h - h9).total_seconds() / 60
         if h > h13: t = (t - (h13 - h11).total_seconds() / 60)
+        t += day * 240
         p = float(成交点)
 
         if self.line_blue:
@@ -172,21 +178,23 @@ class Stocraft(gfx.WorldObject):
             self.line_blue.local.z = 0.001
             self.add(self.line_blue)
 
-    def add_feature(self,row,pop):
+    def add_feature(self,row,pop,day):
         if pop:
             self.remove(self.feature_line)
             self.remove(self.feature_line1)
 
-        编号,起时,终时,起价,终价,总价,均价,均点,起点,终点 = *row,
+        起时,终时,起价,终价,总价,均价,均点,起点,终点 = *row,
 
         now = datetime.now()
-        h9 = datetime.strptime(f'{now.date()} 09:30:00','%Y-%m-%d %H:%M:%S')
-        h11 = datetime.strptime(f'{now.date()} 11:30:00','%Y-%m-%d %H:%M:%S')
-        h13 = datetime.strptime(f'{now.date()} 13:00:00','%Y-%m-%d %H:%M:%S')
-        h15 = datetime.strptime(f'{now.date()} 15:00:00','%Y-%m-%d %H:%M:%S')
+        date = 起时.split(' ')[0]
+        h9 = datetime.strptime(f'{date} 09:30:00','%Y%m%d %H:%M:%S')
+        h11 = datetime.strptime(f'{date} 11:30:00','%Y%m%d %H:%M:%S')
+        h13 = datetime.strptime(f'{date} 13:00:00','%Y%m%d %H:%M:%S')
+        h15 = datetime.strptime(f'{date} 15:00:00','%Y%m%d %H:%M:%S')
         h = datetime.strptime(起时,'%Y%m%d %H:%M:%S')
         t = (h - h9).total_seconds() / 60
         if h > h13: t = (t - (h13 - h11).total_seconds() / 60)
+        t += day * 240
         p0,p1 = float(起点),float(终点)
         p = float(均点)
 

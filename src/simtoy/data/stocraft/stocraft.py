@@ -513,46 +513,50 @@ if __name__ == '__main__':
             已有交易 = None
             已有特征 = None
             
-            now = datetime.now()
             end = datetime.strptime(args.date,'%Y%m%d')
             start = end - timedelta(args.days)
             dates = [d.strftime('%Y%m%d') for d in pd.date_range(start,end,freq='1D')][1:]
             
+            now = datetime.now()
             h9 = now.replace(hour=9, minute=15, second=0)
             h15 = now.replace(hour=15, minute=0, second=0)
             
-            for date in dates:
+            for i,date in enumerate(dates):
                 交易 = get_stock_intraday(args.code,date)
                 
                 if 交易 is None: continue
                 # 流量 = measure(交易)
+                if i == 0: print(','.join(交易.columns))
 
                 if 已有交易 is None:
                     新增交易 = 交易
-                    print(','.join(交易.columns))
                 else:
                     index_diff = 交易.index.difference(已有交易.index)
                     新增交易 = 交易.loc[index_diff]
 
-                if not 新增交易.empty: print(新增交易.to_csv(header=False),flush=True)
+                if not 新增交易.empty: print(新增交易.to_csv(header=False,index=False),flush=True)
+
                 print('f')
                 特征 = feature(交易,已有特征)
-
+                if i == 0: print(','.join(特征.columns))
                 if 已有特征 is None:
                     新增特征 = 特征
-                    print(','.join(特征.columns),flush=True)
                 else:
                     index_diff = 特征.index.difference(已有特征.index)
                     新增特征 = 特征.loc[index_diff]
                     if 新增特征.empty: 新增特征 = 特征.tail(1)
 
-                if not 新增特征.empty: print(新增特征.to_csv(header=False),flush=True)
+                if not 新增特征.empty: print(新增特征.to_csv(header=False,index=False),flush=True)
                 
-                已有交易 = 交易
-                已有特征 = 特征
                 print('d')
-                time.sleep(10)
-                if datetime.now() < h15: dates.append(date)
+                if datetime.now() < h15: 
+                    已有交易 = 交易
+                    已有特征 = 特征
+                    dates.append(date)
+                else:
+                    已有交易 = None
+                    已有特征 = None
+
         elif args.mode == 'test':
             pass
         elif args.mode == 'exit':
