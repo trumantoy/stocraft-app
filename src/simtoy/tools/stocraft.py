@@ -14,6 +14,8 @@ class Stocraft(gfx.WorldObject):
         self.steps = list()
         self.process_measure = self.process_up = None
         self.line_blue = None
+        self.feature_line = None
+        self.feature_line1 = None
         self.make_box(0)
 
     def __del__(self):
@@ -46,7 +48,7 @@ class Stocraft(gfx.WorldObject):
         self.axis_z = gfx.Ruler(start_pos=(0,0,amount_start), end_pos=(0,0,amount_end))
         self.axis_z.local.x = 1 + day
         self.axis_z.local.y = 1
-        self.axis_z.local.scale_z = 1 / (amount_end-amount_start) 
+        self.axis_z.local.scale_z = 1 / (amount_end-amount_start) * 0.25
         self.add(self.axis_z)
 
         grid_xy = gfx.Grid(
@@ -130,7 +132,13 @@ class Stocraft(gfx.WorldObject):
                         if deals: self.add_deal(line.split(','))
                         deals.append(line)
                     if swt == 'f':
-                        if feats: self.add_feature(line.split(','))
+                        if feats:
+                            pop = False 
+                            if line.split(',')[0] == feats[-1].split(',')[0]: 
+                                feats.pop()
+                                pop = True
+
+                            self.add_feature(line.split(','),pop)
                         feats.append(line)
                 else:
                     self.process_measure.stdin.write('exit\n')
@@ -142,10 +150,10 @@ class Stocraft(gfx.WorldObject):
         
         now = datetime.now()
         date = 时间.split(' ')[0]
-        h9 = datetime.strptime(f'{date} 09:30:00','%Y-%m-%d %H:%M:%S')
-        h11 = datetime.strptime(f'{date} 11:30:00','%Y-%m-%d %H:%M:%S')
-        h13 = datetime.strptime(f'{date} 13:00:00','%Y-%m-%d %H:%M:%S')
-        h15 = datetime.strptime(f'{date} 15:00:00','%Y-%m-%d %H:%M:%S')
+        h9 = datetime.strptime(f'{date} 09:30:00','%Y%m%d %H:%M:%S')
+        h11 = datetime.strptime(f'{date} 11:30:00','%Y%m%d %H:%M:%S')
+        h13 = datetime.strptime(f'{date} 13:00:00','%Y%m%d %H:%M:%S')
+        h15 = datetime.strptime(f'{date} 15:00:00','%Y%m%d %H:%M:%S')
 
         h = datetime.strptime(时间,'%Y%m%d %H:%M:%S')
         t = (h - h9).total_seconds() / 60
@@ -164,7 +172,11 @@ class Stocraft(gfx.WorldObject):
             self.line_blue.local.z = 0.001
             self.add(self.line_blue)
 
-    def add_feature(self,row):
+    def add_feature(self,row,pop):
+        if pop:
+            self.remove(self.feature_line)
+            self.remove(self.feature_line1)
+
         编号,起时,终时,起价,终价,总价,均价,均点,起点,终点 = *row,
 
         now = datetime.now()
@@ -180,7 +192,7 @@ class Stocraft(gfx.WorldObject):
 
         geom = gfx.Geometry(positions=[[t,p0,0],[t,p1,0]])
         mater = gfx.LineMaterial(thickness=4,color="red" if p0 < p1 else "green")
-        line = gfx.Line(geom,mater)
+        self.feature_line = line = gfx.Line(geom,mater)
         line.local.scale_x = self.axis_x.local.scale_x
         line.local.scale_y = self.axis_y.local.scale_y
         line.local.z = 0.001
@@ -191,13 +203,16 @@ class Stocraft(gfx.WorldObject):
         
         geom = gfx.Geometry(positions=[[t,p,0],[t,p,c]])
         mater = gfx.LineMaterial(thickness=1,color="red" if p0 < p1 else "green")
-        line = gfx.Line(geom,mater)
+        self.feature_line1 = line = gfx.Line(geom,mater)
         line.local.scale_x = self.axis_x.local.scale_x
         line.local.scale_y = self.axis_y.local.scale_y
         line.local.scale_z = self.axis_z.local.scale_z
         line.local.z = 0.001
 
-        text = gfx.Text(text=f'幅度：{p1-p0}点\n代价：{c:.2f}亿\n支撑价：{均价}',screen_space=True)
-        text.local.position = [t,p,c]
-        line.add(text)
+        if p1 - p0 >= 2:
+            text = gfx.Text(text=f'幅度：{round(p1-p0,2)}点\n代价：{c:.2f}亿\n支撑价：{均价}',screen_space=True)
+            text.local.position = [t,p,c]
+            line.add(text)
         self.add(line)
+
+        

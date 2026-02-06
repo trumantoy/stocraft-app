@@ -29,14 +29,15 @@ def feature(交易,已有特征=None,interval_seconds = 10):
         已有特征 = pd.DataFrame(columns=['起时','终时','起价','终价','总价','均价','均点','起点','终点'])
 
     # 把交易的价格全部换成对数，底数为1.01
-    交易['成交点'] = round(np.log(交易['成交价']) / np.log(1.01))
-    交易['_时间'] = pd.to_datetime(交易['时间'])
-    
+    交易['成交点'] = round(np.log(交易['成交价']) / np.log(1.01),1)
+
     rows = 已有特征.values.tolist()
     if rows: 
-        _,起时,_,_,_,_,_,_,_ = rows[-1]
+        rows.pop()
+        起时,终时,_,_,_,_,_,_,_ = rows.pop()
+        交易['_时间'] = pd.to_datetime(交易['时间'])
         交易 = 交易[交易['_时间'] >= datetime.strptime(起时, "%Y%m%d %H:%M:%S")]
-
+    
     i = 0
     for _,r in 交易.iterrows():
         时间,成交价,手数,买卖盘性质,成交点 = r['时间'],r['成交价'],r['手数'],r['买卖盘性质'],r['成交点']
@@ -50,9 +51,8 @@ def feature(交易,已有特征=None,interval_seconds = 10):
             总价 = 成交价 * 总量
             均价 = 总价 / 总量
             均点 = m.log(均价,1.01)
-            起点 = 终点 = round(成交点)
+            起点 = 终点 = round(成交点,2)
             当前 = 起时,终时,起价,终价,总价,均价,买卖盘性质,起点,终点
-            i += 1
         else:
             _,终时,_,终价,_,均价,性质,_,终点 = 当前
 
@@ -89,7 +89,7 @@ def feature(交易,已有特征=None,interval_seconds = 10):
                         起点 = 近起点
                         终点 = 成交点
                         rows.pop()
-                rows.append((起时,终时,起价,终价,round(总价),round(均价,2),round(均点),round(起点),round(终点)))
+                rows.append((起时,终时,起价,终价,round(总价),round(均价,2),round(均点,2),起点,终点))
                 总量 = 0
                 总价 = 0
                 起时 = 时间
@@ -102,7 +102,8 @@ def feature(交易,已有特征=None,interval_seconds = 10):
             终价 = 成交价
             终点 = 成交点
             当前 = 起时,终时,起价,终价,总价,均价,买卖盘性质,起点,终点
-    
+        i+= 1
+    rows.append((起时,终时,起价,终价,round(总价),round(均价,2),round(均点),round(起点),round(终点)))
     df = pd.DataFrame(columns=['起时','终时','起价','终价','总价','均价','均点','起点','终点'],data=rows)
     return df
 
@@ -278,7 +279,7 @@ def evaluate(code,info,dates : list):
                 最新日期 = date
             
             # 统计特征中，大单的区间，500万以下，500~1000万，1000~2000万，2000万以上的数量，分别用散户，游资，主力，庄家来表示。
-            特征 = 特征[(特征['终点'] - 特征['起点']).abs() > 1]
+            特征 = 特征[(特征['终点'] - 特征['起点']) > 2]
 
             散户 += 特征[特征['总价'] <= 5e7].values.tolist()
             游资 += 特征[(特征['总价'] > 5e7) & (特征['总价'] <= 1e8)].values.tolist()
@@ -410,6 +411,7 @@ def get_stock_intraday(code,date = datetime.now().strftime('%Y%m%d')):
             except: i += 1; time.sleep(0.1)
             else: i = 0
         if h15 < now:
+            os.makedirs(os.path.dirname(filepath),exist_ok=True)
             df.to_csv(filepath,index=False)
 
     if df is not None: 
@@ -532,22 +534,24 @@ if __name__ == '__main__':
                     index_diff = 交易.index.difference(已有交易.index)
                     新增交易 = 交易.loc[index_diff]
 
-                if not 新增交易.empty: print(新增交易.to_csv(header=False))
+                if not 新增交易.empty: print(新增交易.to_csv(header=False),flush=True)
                 print('f')
                 特征 = feature(交易,已有特征)
 
                 if 已有特征 is None:
                     新增特征 = 特征
-                    print(','.join(特征.columns))
+                    print(','.join(特征.columns),flush=True)
                 else:
-                    index_diff = 特征[特征.index.difference(已有特征.index)]
+                    index_diff = 特征.index.difference(已有特征.index)
                     新增特征 = 特征.loc[index_diff]
-                
-                if not 新增特征.empty: print(新增特征.to_csv(header=False))
+                    if 新增特征.empty: 新增特征 = 特征.tail(1)
+
+                if not 新增特征.empty: print(新增特征.to_csv(header=False),flush=True)
                 
                 已有交易 = 交易
                 已有特征 = 特征
                 print('d')
+                time.sleep(10)
                 if datetime.now() < h15: dates.append(date)
         elif args.mode == 'test':
             pass
