@@ -26,7 +26,7 @@ db_dir = 'db'
 
 def feature(交易,已有特征=None,interval_seconds = 10):
     if 已有特征 is None:
-        已有特征 = pd.DataFrame(columns=['起时','终时','起价','终价','总价','均价','均点','起点','终点'])
+        已有特征 = pd.DataFrame()
 
     # 把交易的价格全部换成对数，底数为1.01
     交易['成交点'] = round(np.log(交易['成交价']) / np.log(1.01),1)
@@ -108,6 +108,7 @@ def feature(交易,已有特征=None,interval_seconds = 10):
     return df
 
 
+
 # def measure(code,date,info,freq=10):
 #     df = pd.DataFrame(columns=['时间','买手','卖手','买额','卖额','涨跌','价格'])
     
@@ -176,66 +177,61 @@ def feature(交易,已有特征=None,interval_seconds = 10):
     
 #     return df
 
-def measure(交易,freq=10):
-    df = pd.DataFrame(columns=['时间','买手','卖手','买额','卖额','涨跌','价格'])
-    
-    # 基价 = 信息['昨收']
-    # 起价 = 基价
 
-    交易 = 交易[(交易['买卖盘性质'] != '中性盘')].copy()
-    
-    if 0 == 交易.shape[0]: return df
-    交易 : pd.DataFrame
+def measure(交易 : pd.DataFrame,已有流量 = None,freq=60):
+    if 已有流量 is None:
+        已有流量 = pd.DataFrame()
 
+    # 把交易的价格全部换成对数，底数为1.01
     交易['金额'] = 交易['成交价'] * 交易['手数'] * 100
+    交易['成交点'] = round(np.log(交易['成交价']) / np.log(1.01),1)
     交易['_时间'] = pd.to_datetime(交易['时间'])
     交易.set_index('_时间',inplace=True)
-    # 价格 = 昨收价 = 基价
-    涨跌 = 0
-    window_size = int(60 / freq * 2.5)
-    last_time = '9:25'
+
+    rows = 已有流量.values.tolist()
+    if rows: 
+        rows.pop()
+        时间,_,_,_,_ = rows[-1]
+        交易 = 交易[交易['_时间'] >= datetime.strptime(时间, "%Y%m%d %H:%M:%S")]
+
+    # 从交易中提取时间的日期
+    date = 交易['时间'].iloc[0][:8]
+
+    起时 = '9:25'
     a = pd.date_range(date + ' 9:25',date + ' 15:00',freq=f'{freq}s',inclusive='right')
     b = pd.date_range(date + ' 11:30',date + ' 13:00',freq=f'{freq}s',inclusive='right')
-    for i,cur in enumerate(a.difference(b)):
-        cur_time = cur.strftime('%H:%M:%S')
-        买卖盘 = 交易.between_time(last_time,cur_time)
+    for cur in a.difference(b):
+        终时 = cur.strftime('%H:%M:%S')
+        
+        买卖盘 = 交易.between_time(起时,终时)
         买盘 = 买卖盘[买卖盘['买卖盘性质'] == '买盘']
         卖盘 = 买卖盘[买卖盘['买卖盘性质'] == '卖盘']
-        买手 = 买盘['手数']
-        卖手 = 卖盘['手数']
-        买总手 = round(买手.sum(),1)
-        卖总手 = round(卖手.sum(),1)
         买盘金额 = 买盘['金额']
         卖盘金额 = 卖盘['金额']
-        买总额 = round(买盘金额.sum() / 1e7,1)
-        卖总额 = round(卖盘金额.sum() / 1e7,1)
-        成交价 = 买卖盘['成交价']        
-        
-        if not 成交价.empty:
-            涨跌 = round((成交价.iloc[-1] / 昨收价 - 1) * 100,2)
-            价格 = 成交价.iloc[-1]
-        
-        if i < window_size:
-            df.loc[i] = (date + ' ' + cur_time,买总手/window_size,卖总手/window_size,买总额/window_size,卖总额/window_size,涨跌,价格)
-        else:
-            df.loc[i] = (date + ' ' + cur_time,买总手,卖总手,买总额,卖总额,涨跌,价格)
+        买额 = 买盘金额.sum()
+        卖额 = 卖盘金额.sum()
+
+        买卖盘 = 交易.between_time('9:25',终时)
+        买盘 = 买卖盘[买卖盘['买卖盘性质'] == '买盘']
+        卖盘 = 买卖盘[买卖盘['买卖盘性质'] == '卖盘']
+        买盘金额 = 买盘['金额']
+        卖盘金额 = 卖盘['金额']
+        买总额 = 买盘金额.sum()
+        卖总额 = 卖盘金额.sum()
+        成交 = 买卖盘[['成交价','成交点']]
+        起时 = 终时
+
+        if 成交.empty:
+            continue
+
+        成交价 = 成交['成交价'].iloc[-1]
+        成交点 = 成交['成交点'].iloc[-1]
 
         if cur > 交易.index.values[-1]:
             break
 
-        # last_time = cur_time
-
-    # def gaussian_weights(n):
-    #     x = np.linspace(-1, 0, n)
-    #     sigma = 0.5
-    #     weights = np.exp(-(x ** 2) / (2 * sigma ** 2))
-    #     return weights
-    
-    # weights = gaussian_weights(window_size)
-    # df[['买流量', '卖流量']] = df[['买额', '卖额']].rolling(window=window_size).apply(lambda x: np.sum(x * weights) / np.sum(weights), raw=True).round(1)
-    # df.loc[df.index[:window_size],'买流量'] = np.linspace(0,df.loc[0,'买额'],window_size)
-    # df.loc[df.index[:window_size],'卖流量'] = np.linspace(0,df.loc[0,'卖额'],window_size)
-    
+        rows.append((cur.strftime('%Y%m%d %H:%M:%S'),int(买额),int(卖额),int(买总额),int(卖总额),成交价,成交点))
+    df = pd.DataFrame(columns=['时间','买额','卖额','买总额','卖总额','成交价','成交点'],data=rows)
     return df
 
 def evaluate(code,info,dates : list):
@@ -259,6 +255,7 @@ def evaluate(code,info,dates : list):
     庄家 = []
     套牢量 = 0.0
     套牢资金 = 0.0
+    底部 = 0
     均价 = set()
     均点 = set()
     最新日期 = None
@@ -267,7 +264,7 @@ def evaluate(code,info,dates : list):
     天数 = []
     try:
         for i,date in enumerate(dates):
-            交易 = get_stock_intraday(code,date)
+            交易 = get_stock_intraday(code,date,True)
             if 交易 is None: i-=1; continue
             天数.append(date)
             特征 = feature(交易)
@@ -299,26 +296,22 @@ def evaluate(code,info,dates : list):
             总价 = 套牢盘['成交价']  * 套牢盘['手数'] * 100
             套牢资金 += 总价.sum() * m.pow(筹码累计权重,-i)
             套牢量 += (套牢盘['手数'].sum() * 100 / 总量) * m.pow(筹码累计权重,-i)
-
     except:
         import traceback
         traceback.print_exc()
         print('评估失败',code,info['名称'],date,flush=True, file=sys.stderr)
+        最新日期 = dates[0]
         评分 = 0
-    
-    均价 = list(均价)
-    均价.sort()
+    else:
+        均价 = list(均价)
+        均价.sort()
 
-    # 计算最新点 在均点的
-    底部 = 0
-    if 均点: 
-        底部 = np.min(list(均点)) - 最新点
+        # 计算最新点 在均点的
+        if 均点: 
+            底部 = np.min(list(均点)) - 最新点
 
-    if m.isnan(底部) or 底部 < 0: 底部 = 0
-
-    评分 = len(散户) * 散户权重 + len(游资) * 游资权重 + len(主力) * 主力权重 + len(庄家) * 庄家权重 + 套牢量 * 套牢权重 + 底部 * 底部权重
-    if 评分 == 0: return None
-
+        if m.isnan(底部) or 底部 < 0: 底部 = 0
+        评分 = len(散户) * 散户权重 + len(游资) * 游资权重 + len(主力) * 主力权重 + len(庄家) * 庄家权重 + 套牢量 * 套牢权重 + 底部 * 底部权重
     r = {
         '日期': 最新日期,
         '天数': len(天数),
@@ -351,8 +344,7 @@ def up(worker_req : mp.Queue,*args):
     rows = []
     for i in range(stocks.shape[0]):
         _,_,_,_,res = worker_res.get()
-        res : dict    
-        if not res: continue 
+        res : dict
         if i == 0: print(' ',','.join(res.keys()),flush=True)
         print(f'{i},{','.join(str(v) for v in res.values())}',flush=True)
     return pd.DataFrame(rows)
@@ -396,7 +388,8 @@ def get_stock_info(code):
         else: i = 0
     return df
 
-def get_stock_intraday(code,date = datetime.now().strftime('%Y%m%d')):
+def get_stock_intraday(code,date = None,cache = False):
+    if not date: date = datetime.now().strftime('%Y%m%d')
     df = None
     now = datetime.now()
     h9 = now.replace(hour=9, minute=15, second=0)
@@ -404,7 +397,7 @@ def get_stock_intraday(code,date = datetime.now().strftime('%Y%m%d')):
     filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
     if os.path.exists(filepath) and 0 < os.path.getsize(filepath):
         df = pd.read_csv(filepath)
-    elif h9 < now and date == now.strftime('%Y%m%d'):
+    elif h9 < now and date == now.strftime('%Y%m%d') and not cache:
         i = 1
         while i:
             try: df = ak.stock_intraday_em(code)
@@ -413,6 +406,8 @@ def get_stock_intraday(code,date = datetime.now().strftime('%Y%m%d')):
         if h15 < now:
             os.makedirs(os.path.dirname(filepath),exist_ok=True)
             df.to_csv(filepath,index=False)
+    else:
+        df = None
 
     if df is not None: 
         df['时间'] = date + ' ' + df['时间']
@@ -458,7 +453,7 @@ def data_syncing_of_stock_intraday(worker_req : mp.Queue,log : list):
 
             for i,r in stocks.iterrows():
                 while worker_req.qsize() > os.cpu_count(): time.sleep(1)
-                worker_req.put((None,'get_stock_intraday',r['代码']))
+                worker_req.put((None,'get_stock_intraday',r['代码'],None,False))
                 log.append(f'{int(i)+1}/{stocks.shape[0]} {r["代码"]}-{r["名称"]}')
 
         while datetime.now() < h24:
@@ -470,16 +465,13 @@ if __name__ == '__main__':
     worker_req = shared.Queue()
     log = shared.list()
     pi = 0
-    
+
     while True:
         if len(sys.argv) > 1:
             cmd = sys.argv[1:]
             sys.argv = sys.argv[0:1]
         else:
-            try:
-                cmd = input('> ').strip().split(' ')
-            except (EOFError,KeyboardInterrupt):
-                break
+            cmd = input('> ').strip().split(' ')
 
         parser = argparse.ArgumentParser()
         parser.add_argument('mode', type=str, help='The mode to run the program')
@@ -509,8 +501,9 @@ if __name__ == '__main__':
             
             for info in stocks_seleted.values:
                 print(evaluate(info['代码'],info,[args.date]))
-        elif args.mode == 'measure':
+        elif args.mode == 'at':
             已有交易 = None
+            已有流量 = None
             已有特征 = None
             
             end = datetime.strptime(args.date,'%Y%m%d')
@@ -522,19 +515,26 @@ if __name__ == '__main__':
             h15 = now.replace(hour=15, minute=0, second=0)
             
             for i,date in enumerate(dates):
-                交易 = get_stock_intraday(args.code,date)
+                交易 = get_stock_intraday(args.code,date,now > h15)
                 
                 if 交易 is None: continue
-                # 流量 = measure(交易)
-                if i == 0: print(','.join(交易.columns))
+
+                print('d')
+                流量 = measure(交易)                
+                if i == 0: print(','.join(流量.columns))
 
                 if 已有交易 is None:
                     新增交易 = 交易
+                    新增流量 = 流量
                 else:
                     index_diff = 交易.index.difference(已有交易.index)
                     新增交易 = 交易.loc[index_diff]
+                    
+                    index_diff = 流量.index.difference(已有流量.index)
+                    新增流量 = 流量.loc[index_diff]
+                    if 新增流量.empty: 新增流量 = 流量.tail(1)
 
-                if not 新增交易.empty: print(新增交易.to_csv(header=False,index=False),flush=True)
+                if not 新增流量.empty: print(新增流量.to_csv(header=False,index=False),flush=True)
 
                 print('f')
                 特征 = feature(交易,已有特征)
@@ -548,17 +548,20 @@ if __name__ == '__main__':
 
                 if not 新增特征.empty: print(新增特征.to_csv(header=False,index=False),flush=True)
                 
-                print('d')
-                if datetime.now() < h15: 
+                if h9 < now < h15: 
                     已有交易 = 交易
+                    已有流量 = 流量
                     已有特征 = 特征
                     dates.append(date)
                 else:
                     已有交易 = None
+                    已有流量 = None
                     已有特征 = None
 
         elif args.mode == 'test':
-            pass
+            交易 = get_stock_intraday('002339','20260205')
+            print(measure(交易))
+
         elif args.mode == 'exit':
             break
         else:
