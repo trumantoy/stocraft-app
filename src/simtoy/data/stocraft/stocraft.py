@@ -511,10 +511,13 @@ if __name__ == '__main__':
             dates = [d.strftime('%Y%m%d') for d in pd.date_range(start,end,freq='1D')][1:]
             
             now = datetime.now()
-            h9 = now.replace(hour=9, minute=15, second=0)
-            h15 = now.replace(hour=15, minute=0, second=0)
-            
             for i,date in enumerate(dates):
+                cur = datetime.strptime(date,'%Y%m%d')
+                if cur.weekday() in [5,6]: continue
+
+                h9 = cur.replace(hour=9, minute=15, second=0)
+                h15 = cur.replace(hour=15, minute=0, second=0)
+                
                 交易 = get_stock_intraday(args.code,date,now > h15)
                 
                 if 交易 is None: continue
@@ -532,6 +535,7 @@ if __name__ == '__main__':
                     
                     index_diff = 流量.index.difference(已有流量.index)
                     新增流量 = 流量.loc[index_diff]
+                    print(新增流量)
                     if 新增流量.empty: 新增流量 = 流量.tail(1)
 
                 if not 新增流量.empty: print(新增流量.to_csv(header=False,index=False),flush=True)

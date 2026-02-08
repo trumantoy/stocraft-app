@@ -21,7 +21,6 @@ class Stocraft(gfx.WorldObject):
         self.axes_y = []
         self.axes_z = []
         self.grids = []
-        self.make_box(1)
          
     def __del__(self):
         print('del')
@@ -56,7 +55,7 @@ class Stocraft(gfx.WorldObject):
         axis_z.local.x = day
         axis_z.local.y = 1
         axis_z.local.scale_z = 1 / (amount_end-amount_start)
-        axis_y.add(axis_z)
+        self.add(axis_z)
 
         grid_xy = gfx.Grid(
             gfx.box_geometry(),
@@ -67,7 +66,7 @@ class Stocraft(gfx.WorldObject):
                 axis_thickness=0,
                 major_thickness=0.0005,
                 minor_thickness=0.00025,
-                axis_color='white',major_color='white',minor_color='white',
+                axis_color='lightgray',major_color='lightgray',minor_color='lightgray',
                 infinite=False
             ),
             orientation="xy",
@@ -139,15 +138,17 @@ class Stocraft(gfx.WorldObject):
             feats = []
             swt = None
             dates = set()
+            lower = m.inf
+            upper = -m.inf
             
             for obj in self.children: 
                 if obj.__class__ in [gfx.Grid,gfx.Ruler]: self.remove(obj)
             while self.process_measure.poll() is None:
                 line = self.process_measure.stdout.readline().strip()
                 if not line: continue 
-                print(line)
                 
                 if line in ['f','d']: 
+                    print(line)
                     if line == 'd': self.make_box(len(dates) + 1)
                     swt = line; continue
                 
@@ -162,11 +163,15 @@ class Stocraft(gfx.WorldObject):
                     if deals: 
                         dates.add(line[:8])
                         day = len(dates)
-                        self.add_deal(row,day)
-                           
-                    deals.append(row)
+                        lower = min(lower,m.floor(float(成交点)))
+                        upper = max(upper,m.ceil(float(成交点)))
+                        if (upper - lower) < 20:
+                            inc = 20 - (upper - lower)
+                            lower -= inc / 2
+                            upper += inc / 2
 
-                    
+                        self.add_deal(row,day,lower,upper)
+                    deals.append(row)
                 if swt == 'f':
                     if feats:
                         pop = False 
@@ -181,24 +186,24 @@ class Stocraft(gfx.WorldObject):
     
         threading.Thread(target=f,daemon=True).start()
 
-    def add_deal(self,row,day):
-        时间,买额,卖额,买总额,卖总额,成交价,成交点 = *row,
-        
+    def add_deal(self,row,day,lower,upper):
         for axis_y in self.axes_y:
-            axis_y.start_pos[1] = m.floor(min(float(成交点),axis_y.start_pos[1]))
-            axis_y.end_pos[1] = m.ceil(max(float(成交点),axis_y.end_pos[1]))
+            axis_y.start_pos[1] = lower
+            axis_y.end_pos[1] = upper
             axis_y.local.scale_y = 1 / (axis_y.end_pos[1] - axis_y.start_pos[1])
             axis_y.local.y = -axis_y.start_pos[1] * axis_y.local.scale_y
             axis_y.start_value = axis_y.start_pos[1]
 
         for grid in self.grids:
-            lim = self.axes_y[day-1].end_pos[1] - self.axes_y[day-1].start_pos[1]
+            lim = upper - lower
             minor_step = (1 / lim if lim > 0 else 1)
             major_step = (10 / lim if lim > 0 else 1)
             grid.material.major_step = (30 / (self.axes_x[day-1].end_pos[0] - self.axes_x[day-1].start_pos[0]),major_step)
             grid.material.minor_step = (1 / (self.axes_x[day-1].end_pos[0] - self.axes_x[day-1].start_pos[0]),minor_step)
 
 
+        时间,买额,卖额,买总额,卖总额,成交价,成交点 = *row,
+        
         now = datetime.now()
         date = 时间.split(' ')[0]
         h9 = datetime.strptime(f'{date} 09:30:00','%Y%m%d %H:%M:%S')
@@ -207,13 +212,17 @@ class Stocraft(gfx.WorldObject):
         h15 = datetime.strptime(f'{date} 15:00:00','%Y%m%d %H:%M:%S')
 
         h = datetime.strptime(时间,'%Y%m%d %H:%M:%S')
-        t = (h - h9).total_seconds() / 60 + (day-1) * 240
+        t = (h - h9).total_seconds() / 60 #+ (day-1) * 240
         if h > h13: t = (t - (h13 - h11).total_seconds() / 60)
         p = float(成交点)
         if day != len(self.lines_blue):
             geom = gfx.Geometry(positions=[[t,p,0]])
             mater = gfx.LineMaterial(thickness=1,color="blue")
             line_blue = gfx.Line(geom,mater)
+            line_blue.local.x = self.axes_x[day-1].local.x
+            line_blue.local.scale_x = self.axes_x[day-1].local.scale_x
+            line_blue.local.y = -self.axes_y[day-1].start_pos[1] * self.axes_y[day-1].local.scale_y
+            line_blue.local.scale_z = self.axes_z[day-1].local.scale_z
             line_blue.local.z = 0.001
             self.add(line_blue)
             self.lines_blue.append(line_blue)
@@ -231,16 +240,12 @@ class Stocraft(gfx.WorldObject):
             line_green.local.z = 0.001
             self.add(line_green)
             self.lines_green.append(line_green)
-
             line_red.local.x = self.axes_x[day-1].local.x
             line_red.local.scale_x = self.axes_x[day-1].local.scale_x
             line_red.local.scale_z = self.axes_z[day-1].local.scale_z
             line_green.local.x = self.axes_x[day-1].local.x
             line_green.local.scale_x = self.axes_x[day-1].local.scale_x
             line_green.local.scale_z = self.axes_z[day-1].local.scale_z
-            line_blue.local.x = self.axes_x[day-1].local.x
-            line_blue.local.scale_x = self.axes_x[day-1].local.scale_x
-            line_blue.local.scale_z = self.axes_z[day-1].local.scale_z
         else:
             self.lines_blue[day-1].geometry = gfx.Geometry(positions=np.vstack((self.lines_blue[day-1].geometry.positions.data,[[t,p,0]]),dtype=np.float32))
             self.lines_red[day-1].geometry = gfx.Geometry(positions=np.vstack((self.lines_red[day-1].geometry.positions.data,[[t,p,int(买总额) / 1e8]]),dtype=np.float32))
@@ -252,8 +257,7 @@ class Stocraft(gfx.WorldObject):
 
         for line in self.lines_blue + self.lines_red + self.lines_green:
             line.local.y = self.axes_y[0].local.y
-            line.local.scale_y = 1 / (self.axes_y[0].end_pos[1] - self.axes_y[0].start_pos[1])   
-
+            line.local.scale_y = 1 / (self.axes_y[0].end_pos[1] - self.axes_y[0].start_pos[1])
 
     def add_feature(self,row,pop,day):
         if pop:
@@ -262,14 +266,13 @@ class Stocraft(gfx.WorldObject):
 
         起时,终时,起价,终价,总价,均价,均点,起点,终点 = *row,
 
-        now = datetime.now()
         date = 起时.split(' ')[0]
         h9 = datetime.strptime(f'{date} 09:30:00','%Y%m%d %H:%M:%S')
         h11 = datetime.strptime(f'{date} 11:30:00','%Y%m%d %H:%M:%S')
         h13 = datetime.strptime(f'{date} 13:00:00','%Y%m%d %H:%M:%S')
         h15 = datetime.strptime(f'{date} 15:00:00','%Y%m%d %H:%M:%S')
         h = datetime.strptime(起时,'%Y%m%d %H:%M:%S')
-        t = (h - h9).total_seconds() / 60 + (day-1) * 240
+        t = (h - h9).total_seconds() / 60 
         if h > h13: t = (t - (h13 - h11).total_seconds() / 60)
         p0,p1 = float(起点),float(终点)
         p = float(均点)
@@ -277,33 +280,28 @@ class Stocraft(gfx.WorldObject):
         geom = gfx.Geometry(positions=[[t,p0,0],[t,p1,0]])
         mater = gfx.LineMaterial(thickness=4,color="red" if p0 < p1 else "green")
         line0 = gfx.Line(geom,mater)
+        line0.local.x = self.axes_x[day-1].local.x
         line0.local.z = 0.001
         self.add(line0)
+        self.lines_feature.append(line0)
 
         c = float(总价) / 1e8
         
-        geom = gfx.Geometry(positions=[[t,p,0],[t,p,c]])
-        mater = gfx.LineMaterial(thickness=1,color="red" if p0 < p1 else "green")
-        line1 = gfx.Line(geom,mater)
-        line1.local.z = 0.001
-
-        if p1 - p0 >= 2:
+        if abs(p1 - p0) >= 1:            
+            geom = gfx.Geometry(positions=[[t,p1,0],[t,p1,c]])
+            mater = gfx.LineMaterial(thickness=1,color="red" if p0 < p1 else "green")
+            line1 = gfx.Line(geom,mater)
+            line1.local.x = self.axes_x[day-1].local.x
+            line1.local.z = 0.001
             text = gfx.Text(family='KaiTi',text=f'幅度：{round(p1-p0,2)}点\n代价：{c:.2f}亿\n支撑价：{均价}',screen_space=True)
-            text.local.position = [t,p,c]
+            text.local.position = [t,p1,c]
             line1.add(text)
 
-        self.lines_feature.append((line0,line1))
-        self.add(line1)
+            self.lines_feature.append(line1)
+            self.add(line1)
 
-        line1.local.x = self.axes_x[day-1].local.x 
-        line1.local.y = self.axes_y[day-1].local.y 
-        line1.local.z = self.axes_x[day-1].local.z
-        line0.local.x = self.axes_x[day-1].local.x 
-        line0.local.y = self.axes_y[day-1].local.y 
-        line0.local.z = self.axes_x[day-1].local.z
-        line1.local.scale_x = self.axes_x[day-1].local.scale_x
-        line1.local.scale_y = self.axes_y[day-1].local.scale_y
-        line1.local.scale_z = self.axes_z[day-1].local.scale_z
-        line0.local.scale_x = self.axes_x[day-1].local.scale_x
-        line0.local.scale_y = self.axes_y[day-1].local.scale_y
-        line0.local.scale_z = self.axes_z[day-1].local.scale_z
+        for line in self.lines_feature:
+            line.local.y = self.axes_y[day-1].local.y 
+            line.local.scale_x = self.axes_x[day-1].local.scale_x
+            line.local.scale_y = self.axes_y[day-1].local.scale_y
+            line.local.scale_z = self.axes_z[day-1].local.scale_z
