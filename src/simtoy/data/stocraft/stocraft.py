@@ -498,9 +498,14 @@ if __name__ == '__main__':
         elif args.mode == 'evaluate':
             stocks = get_stock_spot()
             stocks_seleted = stocks[stocks['代码'].isin(args.code.split(','))]
+
+            end = datetime.strptime(args.date,'%Y%m%d')
+            start = end - timedelta(args.days)
+            dates = [d.strftime('%Y%m%d') for d in pd.date_range(start,end,freq='1D')][1:]
+            
             
             for info in stocks_seleted.values:
-                print(evaluate(info['代码'],info,[args.date]))
+                print(evaluate(info['代码'],info,dates))
         elif args.mode == 'at':
             已有交易 = None
             已有流量 = None

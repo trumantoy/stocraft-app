@@ -27,7 +27,7 @@
 
         <child type="title">
           <object class="GtkLabel">
-            <property name="label">我的提款机</property>
+            <property name="label">提款机</property>
           </object>
         </child>
 

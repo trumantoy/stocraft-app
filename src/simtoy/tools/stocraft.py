@@ -110,7 +110,7 @@ class Stocraft(gfx.WorldObject):
                 line = self.process_up.stdout.readline().strip()
                 if not line: continue 
                 print(line,flush=True)
-                if line != "-" or line != ">": 
+                if line not in ["-",">"]: 
                     func(line)
                 else:
                     self.process_up.stdin.write('exit\n')

@@ -10,16 +10,35 @@
                 <property name="margin-start">10</property>
                 <property name="margin-end">10</property>
 
-                <child>
-                    <object class="GtkSearchEntry" id="code">
-                        <signal name="activate" handler="on_code_activate" swapped="no"/>
-                    </object>
-                </child>
+
+                
+
 
                 <child>
                     <object class="GtkBox">
                         <property name="orientation">horizontal</property>
-                        <property name="spacing">5</property>
+                        <property name="homogeneous">True</property>
+                        <property name="spacing">10</property>
+                        <child>
+                            <object class="GtkSearchEntry" id="code">
+                                <signal name="activate" handler="on_code_activate"/>
+                            </object>
+                        </child>
+
+                        <child>
+                            <object class="GtkToggleButton" id="up">
+                                <property name="label">候选</property>
+                                <signal name="toggled" handler="on_up_toggled"/>
+                            </object>
+                        </child>
+                    </object>
+                </child>
+
+                
+                <child>
+                    <object class="GtkBox">
+                        <property name="orientation">horizontal</property>
+                        <property name="spacing">10</property>
                         <child>
                             <object class="GtkLabel" id="label_days">
                                 <property name="label">天数</property>
@@ -37,20 +56,22 @@
                                         <property name="step_increment">1</property>
                                         <property name="page_increment">10</property>
                                         <property name="page_size">0</property>
-                                        <property name="value">1</property>
+                                        <property name="value">7</property>
                                     </object>
                                 </property>
                                 <property name="climb_rate">1</property>
+                                <signal name="value-changed" handler="on_days_value_changed"/>
                             </object>
                         </child>
+                                
                     </object>
                 </child>
 
-
+                
                 <child>
                     <object class="GtkBox">
                         <property name="orientation">horizontal</property>
-                        <property name="spacing">5</property>
+                        <property name="spacing">10</property>
                         <child>
                             <object class="GtkLabel" id="label_score">
                                 <property name="label">分数</property>
@@ -75,18 +96,16 @@
                                 <signal name="value-changed" handler="on_score_value_changed"/>
                             </object>
                         </child>
+                                
                     </object>
                 </child>
 
-                <child>
-                    <object class="GtkButton" id="candidate">
-                        <property name="label">候选</property>
-                        <signal name="clicked" handler="on_btn_candidate_clicked"/>
-                    </object>
-                </child>
 
                 <child>
                     <object class="GtkListView" id="spots">
+                        <style>
+                            <class name="rich-list"/>
+                        </style>
                         <property name="vexpand">True</property>
                     </object>
                 </child>
